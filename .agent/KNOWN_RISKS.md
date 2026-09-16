@@ -11,6 +11,7 @@
 | 升级 / 备份路径 | 🔴 | `dbcore.backupOnVersionUpgrade()`、`web/backup/*`、`web/recovery/*` | 备份失败导致无法回滚 | 不得弱化备份行为；改动要有测试 |
 | Web 终端 | 🟠 | `web/api/terminal/*`、`admin.xtermjs.go` | 会话劫持、权限绕过、2FA 流程缺陷 | 关注 Origin 校验与会话归属校验 |
 | 插件系统 | 🟠 | `internal/plugin/*`、`pkg/jsruntime/*` | 插件权限绕过、宿主崩溃、市场下载 SSRF | 检查权限清单与路径限制；勿放宽文件/网络访问 |
+| JS 运行时 Node 兼容层 | 🟠 | `pkg/jsruntime/fs/*`、`pkg/jsruntime/child_process/*`、`pkg/jsruntime/stream/*` | 参数解析与 Node 语义不一致（如 options 位置传字符串）导致文件权限错误；子进程 stdio 与回收顺序错误导致输出丢失/流不触发 EOF | 修改前先确认 Node 的实际语义；**子进程回收必须等 stdout/stderr 泵读完再 `cmd.Wait()`**（Go 文档明确要求）；Linux 与 Windows 行为不同，需两端验证 |
 | 文件管理 / 上传 | 🟠 | `web/filemanager/*`、`web/upload/*` | 路径穿越、越权读写、大小/分片校验缺陷 | 校验路径规范化与令牌归属 |
 | 认证与权限 | 🔴 | `web/api/Auth.go`、`principal.go`、`database/accounts/*` | 鉴权绕过、会话固定、Cookie 属性缺失 | 改动需覆盖 admin/client/guest 三种身份与 API Key |
 | 安装 / 恢复向导 | 🟠 | `web/install/*`、`web/recovery/*` | 无认证窗口被利用、DSN 泄漏 | 保持 `requireActive` 门控与脱敏逻辑；不要把向导暴露在常规路由 |
