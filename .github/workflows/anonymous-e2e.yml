@@ -196,8 +196,10 @@ jobs:
           ws = websocket.create_connection("ws://127.0.0.1:25774/api/clients", timeout=15)
           ws.send("get")
           msg = json.loads(ws.recv())
-          online = list(msg.get("online") or [])
-          data = msg.get("data") or {}
+          # 服务端把结果包在 {"status": ..., "data": {...}} 里
+          payload = msg.get("data") if isinstance(msg.get("data"), dict) else msg
+          online = list(payload.get("online") or [])
+          data = payload.get("data") or {}
           print("online:", online)
           print("reported uuids:", list(data.keys()))
           ws.close()
