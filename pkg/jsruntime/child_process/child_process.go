@@ -299,9 +299,17 @@ func (m *Module) spawnChild(vm *goja.Runtime, command string, arguments []string
 		return vm.ToValue(false)
 	})
 
-	m.pipeChildOutput(vm, stdoutReader, stdout, options.encoding)
-	m.pipeChildOutput(vm, stderrReader, stderr, options.encoding)
+	// exec.Cmd.Wait closes the pipes handed out by stdoutPipe/stderrPipe as soon
+	// as it sees the command exit, so it must not run before the pumps below
+	// have drained them. Starting it early made the pumps lose output that the
+	// child had already written, or stop them from ever signalling EOF, which
+	// is how the child_process tests failed intermittently on Linux.
+	var pumps sync.WaitGroup
+	pumps.Add(2)
+	m.pipeChildOutput(vm, stdoutReader, stdout, options.encoding, pumps.Done)
+	m.pipeChildOutput(vm, stderrReader, stderr, options.encoding, pumps.Done)
 	go func() {
+		pumps.Wait()
 		err := cmd.Wait()
 		cancel()
 		m.runtime.RemoveResource(resourceID)
@@ -414,13 +422,16 @@ func childCallback(call goja.FunctionCall) goja.Callable {
 	return nil
 }
 
-func (m *Module) pipeChildOutput(vm *goja.Runtime, reader io.Reader, stream *goja.Object, encoding string) {
+func (m *Module) pipeChildOutput(vm *goja.Runtime, reader io.Reader, stream *goja.Object, encoding string, done func()) {
 	push, _ := goja.AssertFunction(stream.Get("push"))
 	setEncoding, _ := goja.AssertFunction(stream.Get("setEncoding"))
 	if encoding != "" && setEncoding != nil {
 		_, _ = setEncoding(stream, vm.ToValue(encoding))
 	}
 	go func() {
+		if done != nil {
+			defer done()
+		}
 		data := make([]byte, 32*1024)
 		for {
 			count, err := reader.Read(data)
