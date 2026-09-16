@@ -30,8 +30,8 @@
 | 12 | 全仓库 | 无 `golangci-lint` 配置、无统一格式化约束 | 若引入仅用保守规则集，且先只做 CI 检查不批量改代码 |
 | 13 | 全仓库 | 仅 3 处 TODO/FIXME 标记 | 低优先级 |
 | 14 | 主数据库 | 仅支持 SQLite（`SupportedDatabaseTypes()` 只返回 sqlite），而指标库支持三种数据库 | 属产品设计，不在稳定分支变更 |
-| 15 | `install-komari.sh` | 内嵌第三方 Lite 分支引用（`nuomiiiii/komari`）与上游仓库地址 | Fork 需决定脚本指向（见 `BASELINE_AUDIT.md` §11） |
-| 16 | 前端生成的 Agent 安装命令 | 直接引用 `raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/...`（会漂移；上游 Agent 仓库若归档将失效） | 若上游 Agent 停止维护，考虑镜像安装脚本 |
+| 15 | `install-komari.sh` | 内嵌第三方 Lite 分支引用（`nuomiiiii/komari`）与上游仓库地址 | **已处理**：下载来源已参数化为 `REPO_OWNER`/`REPO_NAME`/`RELEASE_BASE`/`GITHUB_API_BASE`，默认指向本 fork |
+| 16 | 前端生成的 Agent 安装命令 | 当前直接引用 `raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/...`（会漂移） | **决策（2026-09-16）**：Agent 安装/更新统一走本 fork 的 `xinian5216/komari-agent-stable`；待镜像仓库创建后修改指向（`.agent/INSTALLERS.md` §2） |
 | 17 | 前端 | `npm run lint` 有 29 条 warning（react-hooks 依赖类） | 不阻塞；不主动修 |
 
 ## 文档

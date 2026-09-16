@@ -21,7 +21,7 @@
 | 5 | **Tests** | ✅ **PASS** | `go test ./... -count=1` 全绿；`go vet ./...` 无输出；前端 `npm run lint` 0 error / 29 warning；`actionlint` 对全部 workflow 零问题 |
 | 6 | **Docker Build** | ❌ **待验证** | 本机无 Docker，无法本地验证镜像构建与运行；`stable-release.yml` 会在 release 时构建 amd64+arm64。**建议在 push 后先手动触发一次 CI 构建验证** |
 | 7 | **Installer Check** | ✅ **PASS** | `install-komari.sh`：`bash -n` 语法通过；下载来源已收口为 4 个变量（`REPO_OWNER`/`REPO_NAME`/`RELEASE_BASE`/`GITHUB_API_BASE`），全脚本仅 4 处 URL 构造，无其它硬编码；URL 拼接已实测输出正确 |
-| 8 | **Agent Installer Check** | ⚠️ **待补** | Agent 安装命令由**前端仓库**生成（`komari-web/src/components/admin/NodeTable/NodeFunction.tsx`、`src/pages/admin/index.tsx`），当前硬编码上游 `raw.githubusercontent.com/komari-monitor/komari-agent`。需在前端镜像完成后改为 fork 来源（见 `.agent/INSTALLERS.md` §2） |
+| 8 | **Agent Installer Check** | ⚠️ **待补（计划已定）** | 决策（2026-09-16）：Agent 安装/更新统一走本 fork 的 `xinian5216/komari-agent-stable`（源自上游 `komari-agent`；**v2 协议冻结**）。当前前端仍硬编码上游 raw 地址（`komari-web/src/components/admin/NodeTable/NodeFunction.tsx`、`src/pages/admin/index.tsx`），待 `komari-web-stable` / `komari-agent-stable` 创建后一并修改（`.agent/INSTALLERS.md` §2） |
 | 9 | **Upstream Dependency Check** | ⚠️ **有条件通过** | `govulncheck`：**2 个代码可达**漏洞（`golang.org/x/text` GO-2026-5970、`golang.org/x/net` GO-2026-5026）+ 9 个导入包级 + 22 个模块级（不可达）。均为**上游继承**问题，已记录并计划在 `1.5.0-stable.1` 以最小依赖升级修复 |
 
 ## 2. 命中明细与非机密判定
@@ -48,8 +48,9 @@
 ## 3. 公开推送前仍需完成（建议顺序）
 
 1. **创建 GitHub 仓库**：`xinian5216/komari-stable`（公开）——推送前请再次确认本报告。
-2. **前端镜像**：fork/镜像 `komari-web` → `xinian5216/komari-web-stable`，打 tag `v1.5.0-stable.0`；
-   随后修正 Agent 安装命令来源（第 1 项 ⚠️）。
+2. **镜像仓库**：创建 `xinian5216/komari-web-stable`（打 tag `v1.5.0-stable.0`）与
+   `xinian5216/komari-agent-stable`（源自上游 `komari-agent`，作为 Agent 安装/更新通道；协议保持
+   v2 冻结、向后兼容）；随后修正前端中的 Agent 安装命令指向（第 8 项 ⚠️）。
 3. **CI 预演**：在 fork 上手动触发 `stable-ci.yml`（验证 linux 构建与测试）与一次临时 tag 的
    Docker 构建（验证第 6 项），确认无误后再发首个 release。
 4. **上游遗留 workflow 处置**（`development.yml` 会 SSH 部署到作者生产环境、

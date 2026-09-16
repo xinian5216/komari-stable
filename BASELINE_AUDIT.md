@@ -45,7 +45,7 @@
 | --- | --- | --- | --- | --- |
 | `komari-monitor/komari` | **是（2026-09-15）** | `main` | 2026-09-14 | 服务端 + 默认主题容器 + 插件宿主（本审计对象） |
 | `komari-monitor/komari-web` | 否 | `radix` | 2026-09-14 | 前端默认主题（React 19 + Vite + TS），独立仓库、独立 tag（`1.5.0` = `dec649518a769882308ab80794c633bf6bfc265b`） |
-| `komari-monitor/komari-agent` | 否 | `main` | 2026-09-15 | Agent（Go），独立版本线（最新 `1.5.10`） |
+| `komari-monitor/komari-agent` | 否 | `main` | 2026-09-15 | Agent（Go），独立版本线（最新 `1.5.10`）；本 fork 以 `xinian5216/komari-agent-stable` 镜像维护（见 §11） |
 | `komari-monitor/komari-protocol` | 否 | `main` | 2026-08-04 | v1/v2 线协议冻结 + 冻结测试（"frozen v1/v2, guarded by freeze tests"） |
 | `komari-monitor/komari-document` | 否 | `main` | 2026-09-14 | 文档源（发布到 komari.wiki） |
 | `plugin-sdk` / `plugin-dev` / `create-komari-plugin` / `plugin-market` / `theme-market` | 否 | — | 2026-08~09 | 插件与主题生态（面板运行期会访问这两个 market） |
@@ -228,12 +228,13 @@ CORS Origin 校验与 WebSocket Origin 校验默认开启（`internal/config/set
   （`protocol/v2/jsonrpc.go`）。
 - 自动发现注册：`POST /api/clients/register`（`Authorization: Bearer <AutoDiscoveryKey>`，密钥 <12 位直接拒绝）。
 - 终端流量走独立 WebSocket：`/api/clients/terminal?id=<session>`；文件走 `/api/clients/transfer/:id`。
-- **服务端版本与 Agent 版本解耦**：Agent 独立发版（最新 1.5.10），并**自带自动更新**（从
-  `komari-agent` 的 GitHub Release 拉取）。→ Fork 无法也不应干预 Agent 的升级通道；
-  稳定分支的最低义务是：**v2 线协议与端点保持向后兼容**，不因服务端改动让旧 Agent 掉线。
-- **外部依赖点**：前端生成的 Agent 安装命令直接引用
-  `https://raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/install.sh|install.ps1`
-  ——这是一个**会漂移的第三方引用**；若上游 Agent 仓库未来归档，安装流程将失效（Fork 需评估镜像/自托管，见 §10）。
+- **服务端版本与 Agent 版本解耦**：Agent 独立发版（上游最新 `1.5.10`），并自带自动更新（从发布仓库的
+  GitHub Release 拉取）。→ **本 fork 策略（2026-09-16 决定）**：本 fork **建立并维护**
+  `xinian5216/komari-agent-stable`（源自上游 `komari-agent`），作为 Agent 的**安装与更新通道**；
+  同时 **v2 线协议与端点冻结**，Agent 侧改动仅限 Bug/安全修复，服务端必须继续兼容旧 Agent。
+- **外部依赖点**：前端生成的 Agent 安装命令当前直接引用上游
+  `raw.githubusercontent.com/komari-monitor/komari-agent/...`（会漂移）——前端镜像落地后，
+  改为指向 `xinian5216/komari-agent-stable`（见 `.agent/INSTALLERS.md`）。
 - 上游另有 `komari-protocol` 仓库对 v1/v2 做"冻结 + 冻结测试"，可作为协议兼容的对照基准。
 
 ### 9.3 其它高风险模块
@@ -296,21 +297,23 @@ UI 重写、依赖大版本升级、新增大型功能、删除现有功能、�
 
 - 跟踪上游 fork 网络与社区分支（例如 `nuomiiiii/komari` Lite 版、各主题仓库）中出现的修复，
   **择优移植**而不是 rebase 上游。
-- 关注 `komari-agent` / `komari-web` / `komari-protocol` 三个仍活跃仓库：若上游对 v2 协议或前端
-  API 做不兼容变更，Fork 需要**冻结**自己的前端 ref 并评估是否跟进。
+- 上游对照仓库：`komari-protocol`（v1/v2 协议冻结与 freeze tests）继续作为**兼容性对照基准**；
+  `komari-agent` / `komari-web` 的代码由本 fork 以镜像仓库（`xinian5216/komari-agent-stable` /
+  `xinian5216/komari-web-stable`）继续维护：上游有新修复时择优移植，不盲目跟随默认分支
+  （前端 ref 永远固定 tag/commit；Agent 侧协议永远冻结为 v2）。
 - 仓库公开前执行：密钥/隐私扫描（脚本 + 历史）、README/文档脱敏、LICENSE/NOTICE/版权保留核查。
 
-## 11. 待决问题（需要维护者拍板）
+## 11. 决策记录（原"待决问题"，2026-09-16 已确认）
 
-1. **仓库与命名**：GitHub 仓库名（建议 `komari-stable`）、是否公开、Docker 命名空间
-   （建议 `ghcr.io/<owner>/komari-stable`）。
-2. **前端策略**：固定 ref（建议固定到 `komari-web` tag `1.5.0` = `dec6495`）还是允许跟进；
-   是否在 Fork 内镜像前端源码以便完全自持。
-3. **`install-komari.sh` 与 Agent 安装脚本**：上游引用（`komari-monitor/*`、第三方 Lite 仓库）
-   是否改为指向 Fork，或原样保留并加说明。
-4. **`generate-release-notes.yml`（AI 发版说明）** 与 `development.yml`（SSH 部署作者生产环境）
-   的移除方式（建议直接删除，仅保留在 git 历史里）。
-5. **是否启用 `snapshot` 通道**（稳定分支建议关闭）。
+1. **仓库**：`xinian5216/komari-stable`（公开）；Docker 命名空间 `ghcr.io/xinian5216/komari-stable`。
+2. **前端**：独立镜像 `xinian5216/komari-web-stable`，CI **固定 tag**（当前 `v1.5.0-stable.0`），不跟随默认分支。
+3. **Agent（覆盖本报告早期结论）**：本 fork **建立并维护** `xinian5216/komari-agent-stable`，
+   承袭上游 `komari-agent` 并拥有自己的安装/更新通道；**v2 协议冻结、向后兼容**（见 §9.2 与
+   `MAINTENANCE_POLICY.md` §7）。
+4. **`install-komari.sh`**：已参数化（`REPO_OWNER`/`REPO_NAME`/`RELEASE_BASE`/`GITHUB_API_BASE`），默认指向本 fork。
+5. **上游遗留 workflow**：`development.yml`（SSH 部署作者生产环境）、`generate-release-notes.yml`
+   （依赖 `OPENAI_API_KEY`）、`auto-merge-dev-to-main.yml` 建议删除（待执行）。
+6. **snapshot 通道**：稳定分支不启用。
 
 ---
 

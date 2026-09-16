@@ -55,5 +55,6 @@ Agent 通过下次 `agent.report` 的 `ack_event_ids` 确认；服务端保证 a
 1. **不得**修改 `protocol/v2` 中的方法与字段名；新增字段必须可选、旧 Agent 可忽略。
 2. 服务端必须同时接受 WS 与 POST 两种传输，且 POST 响应里的 `result.events[]` 语义不变。
 3. `agent.report` 缺失/多出字段要能容错（旧 Agent 不发送 GPU 等新字段）。
-4. Server 版本与 Agent 版本**解耦**：Agent 独立发版（上游 `komari-agent`，含自动更新）。
+4. Server 版本与 Agent 版本**解耦**：Agent 由本 fork 的 `xinian5216/komari-agent-stable` 独立发版
+   （安装/更新通道同指向该仓库）；上游 `komari-agent` 仅作为择优移植来源。协议仍冻结为本文档描述的 v2。
 5. 涉及协议改动的 PR：同步更新本文件 + `CHANGELOG.md` 的 Compatibility 段。

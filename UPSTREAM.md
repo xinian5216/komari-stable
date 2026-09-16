@@ -43,7 +43,15 @@
 - 新增 CI：`.github/workflows/{stable-ci,stable-release,secret-scan}.yml`
 - 未改动：`cmd/ database/ internal/ pkg/ protocol/ utils/ web/`（全部业务代码与上游一致）
 
-## 4. 代码溯源规则（重要）
+## 4. 组件仓库（本 fork 维护）
+
+| 组件 | 仓库 | 说明 |
+| --- | --- | --- |
+| 服务端 | `xinian5216/komari-stable`（本仓库） | 基于上游 `1.5.0-fix1`；只做修复与兼容性维护 |
+| 前端默认主题 | `xinian5216/komari-web-stable` | 源自上游 `komari-web`；本 fork 固定 tag 引用 |
+| Agent | `xinian5216/komari-agent-stable` | 源自上游 `komari-agent`；本 fork 的 Agent 安装/更新通道；**v2 协议冻结、向后兼容** |
+
+## 5. 代码溯源规则（重要）
 
 - **Go module path 保持 `github.com/komari-monitor/komari` 不变**：改 module path 会导致
   全仓库 import 变更（数百文件）并破坏与上游的对照关系，属于禁止类改动。

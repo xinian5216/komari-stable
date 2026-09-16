@@ -19,6 +19,8 @@
 
 - ⛔ 未经确认不得修改数据库 Schema / 迁移逻辑 / 用户数据结构（先报告风险并等待确认）。
 - ⛔ 不得修改 Agent v2 线协议、HTTP API 字段、配置格式、Docker 部署方式（只能做向后兼容的增量）。
+- ⛔ Agent 与前端分别由镜像仓库 `xinian5216/komari-agent-stable` / `xinian5216/komari-web-stable` 维护；
+  对 Agent 的任何改动都必须保持 **v2 协议冻结并向后兼容**（服务端不得拒绝旧 Agent）。
 - ⛔ 禁止：全项目格式化、无意义重命名、目录大调整、框架/ORM/数据库替换、API 重设计、UI 重写、
   "为升级而升级"的依赖变更、删除现有功能、改变用户可见行为（明确 Bug 除外）。
 - ⛔ 禁止未经允许：force push、删除 tag/branch、重写已发布历史、覆盖不可变 Docker tag、删除 Release。

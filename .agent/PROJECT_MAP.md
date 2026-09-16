@@ -39,6 +39,7 @@ data/                      运行期数据目录（komari.db / metrics.db / plug
 | 仓库 | 用途 |
 | --- | --- |
 | `xinian5216/komari-web-stable` | 前端默认主题（本 fork 维护，CI 固定引用其 tag） |
-| `komari-monitor/komari-agent` | Agent（上游仍活跃，独立版本线） |
+| `xinian5216/komari-agent-stable` | Agent（本 fork 维护的镜像：安装/更新通道；**v2 协议冻结、向后兼容**） |
+| `komari-monitor/komari-agent` | Agent 的上游来源（仍活跃，作为择优移植来源） |
 | `komari-monitor/komari-protocol` | v1/v2 线协议冻结与冻结测试（对照基准） |
 | `komari-monitor/komari-document` | 官方文档源（komari.wiki） |

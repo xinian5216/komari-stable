@@ -7,7 +7,7 @@
 | --- | --- | --- | --- | --- |
 | 数据库 Schema / 迁移 | 🔴 | `database/dbcore/dbcore.go`、`internal/migrations/*`、`pkg/metric/migrations.go`、`internal/metricstore/store_migration.go` | 升级失败或数据损坏；AutoMigrate 行为变化；旧库兼容 | **必须先报告并获得确认**；用真实旧库副本做升级+回滚演练 |
 | 指标存储引擎 | 🔴 | `pkg/metric/*`（30k 行） | 聚合/摘要/回收逻辑错误 → 历史数据错误或丢失；大库性能 | 改动要带回归测试；避免触碰 rollup/digest 语义 |
-| Agent 协议 / 上报 | 🟠 | `protocol/v2/*`、`web/api/client/*` | 旧 Agent 掉线、数据丢失、事件重复/丢失 | 只做向后兼容增量；参考 `komari-protocol` 冻结测试 |
+| Agent 协议 / 上报 | 🟠 | `protocol/v2/*`、`web/api/client/*` | 旧 Agent 掉线、数据丢失、事件重复/丢失 | 只做向后兼容增量；参考 `komari-protocol` 冻结测试；本 fork 维护 `xinian5216/komari-agent-stable`，Agent 侧也只允许 Bug/安全修复 |
 | 升级 / 备份路径 | 🔴 | `dbcore.backupOnVersionUpgrade()`、`web/backup/*`、`web/recovery/*` | 备份失败导致无法回滚 | 不得弱化备份行为；改动要有测试 |
 | Web 终端 | 🟠 | `web/api/terminal/*`、`admin.xtermjs.go` | 会话劫持、权限绕过、2FA 流程缺陷 | 关注 Origin 校验与会话归属校验 |
 | 插件系统 | 🟠 | `internal/plugin/*`、`pkg/jsruntime/*` | 插件权限绕过、宿主崩溃、市场下载 SSRF | 检查权限清单与路径限制；勿放宽文件/网络访问 |

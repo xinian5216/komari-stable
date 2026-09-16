@@ -70,7 +70,9 @@ Issue → 复现 → 根因 → 写失败测试（failing test） → 最小修�
 - 服务端必须尽可能兼容官方 Agent（v2 协议，`/api/clients/v2/rpc`：WebSocket 优先、POST 回退、`agent.pull`）。
 - 不主动修改线协议；确需修改时必须**向后兼容**（新服务端仍接受旧 Agent 报文）。
 - 不得因服务端重构导致旧 Agent 无法连接、上报、执行任务或建立终端会话。
-- Agent 本身没有问题就不改 Agent；Agent 的版本线与发版由上游 `komari-agent` 决定。
+- **Agent 由本 fork 维护镜像仓库** `xinian5216/komari-agent-stable`（源自上游 `komari-agent`）：
+  其安装脚本、发布与更新通道由本 fork 负责；Agent 侧只接受 Bug/安全修复，**协议固定为冻结的 v2**，
+  且服务端不得因 Agent 版本推进而拒绝旧 Agent。
 
 ## 8. 依赖与安全维护
 

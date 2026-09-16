@@ -38,6 +38,7 @@ docker run -d -p 25774:25774 -v $(pwd)/data:/app/data --name komari --restart un
 ```
 
 - 服务端在检测到版本变化时，会**自动把整个 `data` 目录备份**到 `data/backup/upgrade-<时间戳>.zip`。
+- Agent：安装与更新使用本分支维护的 <https://github.com/xinian5216/komari-agent-stable>（协议仍为官方 v2，向后兼容）。
 - 升级前仍建议自行备份 `data` 目录（含 `komari.db`、`metrics.db`）。
 - 回滚：换回旧二进制/旧镜像 tag，并用上述备份恢复 `data` 目录。
 
@@ -61,6 +62,14 @@ cp ../komari-web-stable/komari-theme.json web/public/defaultTheme/
 CGO_ENABLED=1 go build -o komari .   # 需要 C 编译器（跨平台编译可用 zig cc）
 ./komari server -l 0.0.0.0:25774
 ```
+
+### 组件与仓库
+
+| 组件 | 本分支使用的仓库 | 上游来源 |
+| --- | --- | --- |
+| 服务端 + 默认主题载体 | **本仓库**（`xinian5216/komari-stable`） | `komari-monitor/komari`（已归档） |
+| 前端默认主题 | `xinian5216/komari-web-stable`（CI 固定 tag） | `komari-monitor/komari-web` |
+| Agent | `xinian5216/komari-agent-stable`（本 fork 维护的安装/更新通道；**v2 协议冻结、向后兼容**） | `komari-monitor/komari-agent` |
 
 ### 文档索引
 
@@ -93,7 +102,7 @@ Versioning: `1.5.0-stable.N`. Branches: `upstream-baseline` (read-only mirror of
 
 - Upstream repository: <https://github.com/komari-monitor/komari>（MIT License，已归档）
 - Frontend: <https://github.com/komari-monitor/komari-web>
-- Agent: <https://github.com/komari-monitor/komari-agent>
+- Agent: 本分支维护 <https://github.com/xinian5216/komari-agent-stable>（源：<https://github.com/komari-monitor/komari-agent>）
 - Documentation: <https://www.komari.wiki/> · 文档源：<https://github.com/komari-monitor/komari-document>
 - Upstream README（原作者版）可在上游仓库或本仓库 git 历史（`main` 分支）中查看。
 

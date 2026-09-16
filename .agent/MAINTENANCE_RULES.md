@@ -33,6 +33,8 @@ Issue → 复现 → 根因 → failing test → 最小修复 → 全量测试 �
 
 - Agent v2 协议、HTTP API 字段、配置格式、Docker 部署方式 = **冻结**；只能加，不能改/删。
 - 旧 Agent（1.2.x ~ 1.5.x）必须能继续连接与上报。
+- Agent 由本 fork 的镜像仓库 `xinian5216/komari-agent-stable` 维护（安装/更新通道同此）；
+  Agent 侧改动只允许 Bug/安全修复，协议仍为冻结的 v2。
 
 ## 5. 危险操作（未经允许禁止）
 

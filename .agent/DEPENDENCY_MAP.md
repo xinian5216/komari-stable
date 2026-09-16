@@ -40,7 +40,9 @@
 
 | 位置 | 用途 |
 | --- | --- |
-| `protocol/v2/*`（本仓库） | 线协议结构与方法名 |
+| `protocol/v2/*`（本仓库） | 线协议结构与方法名（冻结） |
+| `xinian5216/komari-agent-stable`（本 fork 镜像仓库） | Agent 二进制及其安装/更新通道；协议仍为冻结 v2 |
+| `komari-monitor/komari-agent`（上游来源） | 择优移植来源（仅作参考） |
 | `komari-monitor/komari-protocol`（外部仓库） | 冻结对照 + freeze tests |
 
 ## 其它服务端

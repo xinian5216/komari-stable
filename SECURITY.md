@@ -13,8 +13,8 @@
 - 首选：在本仓库 **Security → Report a vulnerability** 里提交 **私有安全公告（Private Security Advisory）**，
   并附上：影响版本、复现步骤或 PoC、影响评估、可能的修复方向。
 - 请**不要**先公开披露 issue。我们会在确认与修复完成后协调公开时间。
-- 若涉及上游仍然活跃的组件（`komari-agent` / `komari-web` / `komari-protocol`），我们会在修复的同时
-  向上游同步（若上游仍然接受报告）。
+- 组件归属：服务端（本仓库）、前端（`xinian5216/komari-web-stable`）、Agent（`xinian5216/komari-agent-stable`）
+  均由本 fork 维护，可直接在对应仓库报告；`komari-protocol` 仍作为上游协议冻结的对照基准。
 
 本分支为社区志愿维护，**不承诺 SLA**；但安全类问题会被优先处理，修复会以 `security:` 前缀提交并
 在 `CHANGELOG.md` 的 `Security` 段中说明。
@@ -32,7 +32,7 @@
 通常不在范围内：
 
 - 需要攻击者已拥有服务器 root/管理员凭据的场景；
-- 与上游 Agent 二进制本身相关的问题（应报告到 `komari-agent`）；
+- Agent 二进制本身的问题：报告到 `xinian5216/komari-agent-stable`（本 fork 维护的镜像仓库，源自上游）；
 - 纯配置错误（如把面板直接暴露在公网且关闭鉴权、未启用 HTTPS 等）；
 - 依赖中**不可达**的漏洞（会记录并随安全升级处理，不单独算安全问题）。
 
