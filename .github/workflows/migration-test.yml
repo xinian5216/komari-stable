@@ -1,0 +1,266 @@
+name: Migration test (official install -> Komari Stable)
+
+# 端到端验证 install-komari.sh 的迁移/升级路径：
+#   1. 安装真实的官方 1.4.3（bf6b45e）实例到 /opt/komari + komari.service，并完成安装向导
+#   2. 用本仓库脚本原地迁移到 1.5.0-stable.0（发布产物通过本地 HTTP 提供）
+#   3. 校验：数据不丢、备份已建、来源标记、版本变化、校验和失败中止、启动失败回滚
+# 只读、无 secrets；所有改动都发生在这台 runner 上。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "install-komari.sh"
+      - ".github/workflows/migration-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - name: Runner facts (systemd / sqlite3)
+        run: |
+          set -x
+          systemctl --version 2>&1 | head -2 || echo "systemctl missing"
+          systemctl is-system-running 2>&1 | head -2 || true
+          ls -d /run/systemd/system 2>/dev/null || echo "no /run/systemd/system (stub will be used)"
+          sqlite3 --version || echo "sqlite3 missing"
+          id
+
+      - name: Build the target release artifact and serve it like a GitHub release
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd sqlite3 >/dev/null
+
+          # 迁移测试只关心二进制行为，前端用最小占位
+          mkdir -p web/public/defaultTheme /tmp/theme
+          printf '{"name":"Komari","short":"stub","description":"migration test stub","version":"1.0.0","author":"test","url":"https://example.invalid","preview":"","configuration":{}}' \
+            > web/public/defaultTheme/komari-theme.json
+          printf 'stub' > /tmp/theme/index.html
+          tar -cf /tmp/dist.tar -C /tmp/theme .
+          zstd -19 -q -f /tmp/dist.tar -o web/public/defaultTheme/dist.tar.zst
+
+          go build -trimpath -ldflags="-s -w \
+            -X github.com/komari-monitor/komari/utils.CurrentVersion=1.5.0-stable.0 \
+            -X github.com/komari-monitor/komari/utils.VersionHash=$(git rev-parse HEAD)" \
+            -o /tmp/komari-linux-amd64 .
+
+          GOOD=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0
+          BROKEN=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0-broken
+          BADSUM=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0-badsum
+          mkdir -p "$GOOD" "$BROKEN" "$BADSUM"
+          cp /tmp/komari-linux-amd64 "$GOOD/komari-linux-amd64"
+          (cd "$GOOD" && sha256sum komari-linux-amd64 | awk '{print $1}' > komari-linux-amd64.sha256)
+
+          # 校验通过但启动失败：用来验证回滚
+          printf '#!/bin/sh\necho "this build refuses to start" >&2\nexit 1\n' > "$BROKEN/komari-linux-amd64"
+          chmod +x "$BROKEN/komari-linux-amd64"
+          (cd "$BROKEN" && sha256sum komari-linux-amd64 | awk '{print $1}' > komari-linux-amd64.sha256)
+
+          # 二进制正确但 .sha256 错误：用来验证校验失败时中止
+          cp /tmp/komari-linux-amd64 "$BADSUM/komari-linux-amd64"
+          echo "0000000000000000000000000000000000000000000000000000000000000000" > "$BADSUM/komari-linux-amd64.sha256"
+
+          (cd /tmp/site && nohup python3 -m http.server 8899 >/tmp/http.log 2>&1 &)
+          sleep 2
+          curl -sI "http://127.0.0.1:8899/xinian5216/komari-stable/releases/download/v1.5.0-stable.0/komari-linux-amd64" | head -1
+
+      - name: systemctl stub (records state, really executes ExecStart)
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/stubbin /tmp/stub-systemd
+          cat > /tmp/stubbin/systemctl <<'STUB'
+          #!/bin/bash
+          state_dir=/tmp/stub-systemd
+          mkdir -p "$state_dir"
+          cmd="${1:-}"; shift || true
+          unit="${1:-}"
+          case "$cmd" in
+            is-active)
+              [ -f "$state_dir/active" ] && exit 0 || exit 3
+              ;;
+            start)
+              # 真正按单元的 ExecStart 跑一次，1 秒内退出即视为启动失败
+              exe=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "/etc/systemd/system/$unit" | head -1)
+              args=$(sed -n 's/^ExecStart=[^ ]*[[:space:]]*//p' "/etc/systemd/system/$unit" | head -1)
+              [ -x "$exe" ] || { echo "stub: $exe missing or not executable" >&2; exit 1; }
+              # shellcheck disable=SC2086
+              timeout 4 "$exe" $args >/tmp/stub-service.log 2>&1 &
+              pid=$!
+              sleep 1
+              if kill -0 "$pid" 2>/dev/null; then
+                touch "$state_dir/active"
+                wait "$pid" 2>/dev/null || true
+                exit 0
+              fi
+              wait "$pid" 2>/dev/null; rc=$?
+              echo "stub: service exited early rc=$rc" >&2
+              rm -f "$state_dir/active"
+              exit 1
+              ;;
+            stop)
+              rm -f "$state_dir/active"
+              ;;
+            *)
+              exit 0
+              ;;
+          esac
+          STUB
+          sed -i 's/^          //' /tmp/stubbin/systemctl
+          chmod +x /tmp/stubbin/systemctl
+          PATH=/tmp/stubbin:$PATH systemctl is-active komari.service; echo "is-active rc=$? (expect 3)"
+
+      - name: Install a real official Komari 1.4.3 instance
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+          sudo mkdir -p /opt/komari/data
+          sudo curl -fsSL -o /opt/komari/komari \
+            https://github.com/komari-monitor/komari/releases/download/1.4.3/komari-linux-amd64
+          sudo chmod +x /opt/komari/komari
+          cat > /tmp/komari.service <<'UNIT'
+          [Unit]
+          Description=Komari Monitor Service
+          After=network.target
+          [Service]
+          Type=simple
+          ExecStart=/opt/komari/komari server -l 0.0.0.0:25774
+          WorkingDirectory=/opt/komari
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          sed -i 's/^          //' /tmp/komari.service
+          sudo cp /tmp/komari.service /etc/systemd/system/komari.service
+          cat /etc/systemd/system/komari.service
+
+          echo "--- 启动官方 1.4.3 并完成安装向导 ---"
+          (cd /opt/komari && sudo ./komari server -l 127.0.0.1:25774 >/tmp/official-server.log 2>&1 &)
+          sleep 10
+          curl -s -m 10 "http://127.0.0.1:25774/api/install/status"; echo
+          curl -s -m 20 -X POST http://127.0.0.1:25774/api/install/complete \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"officialadmin","password":"Official#2026","sitename":"Official Komari 1.4.3","description":"migrated by test","metric_dsn":"./data/metrics.db"}' \
+            -w ' install http=%{http_code}\n'
+          sleep 8
+          curl -s -m 10 "http://127.0.0.1:25774/api/version"; echo
+
+          echo "--- 记录迁移前的数据指纹 ---"
+          sudo bash -c 'ls -la /opt/komari /opt/komari/data | head -20'
+          sudo sqlite3 /opt/komari/data/komari.db "PRAGMA integrity_check;" > /tmp/db-integrity-before.txt
+          cat /tmp/db-integrity-before.txt
+          sudo sqlite3 /opt/komari/data/komari.db ".tables" | tr -s ' ' '\n' | grep -v '^$' | sort > /tmp/tables-before.txt
+          : > /tmp/counts-before.txt
+          while read -r tbl; do
+            n=$(sudo sqlite3 /opt/komari/data/komari.db "select count(*) from \"$tbl\";" 2>/dev/null || echo '?')
+            printf '%s=%s\n' "$tbl" "$n" >> /tmp/counts-before.txt
+          done < /tmp/tables-before.txt
+          cat /tmp/counts-before.txt
+          sudo sha256sum /opt/komari/data/komari.db | tee /tmp/db-sha-before.txt
+          pkill -f "komari server -l 127.0.0.1:25774" || true
+          sleep 2
+
+      - name: Migrate to Komari Stable (expect success)
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+          sudo env PATH=/tmp/stubbin:$PATH \
+            KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
+            KOMARI_TARGET_VERSION=v1.5.0-stable.0 \
+            bash install-komari.sh --migrate --yes 2>&1 | tee /tmp/migration.log
+          echo "---- 迁移日志中的关键行 ----"
+          grep -E "当前版本|目标版本|旧来源|目标来源|备份已创建|校验通过|迁移完成" /tmp/migration.log || true
+
+      - name: Verify the migration (data kept, backup, marker, version)
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+
+          echo "--- 1) 二进制已替换为 1.5.0-stable.0 ---"
+          sudo sha256sum /opt/komari/komari
+          sha256sum /tmp/komari-linux-amd64
+          [ "$(sudo sha256sum /opt/komari/komari | awk '{print $1}')" = "$(sha256sum /tmp/komari-linux-amd64 | awk '{print $1}')" ]
+
+          echo "--- 2) 旧二进制已备份 ---"
+          sudo ls -la /opt/komari/ | grep -E "komari.backup|komari$"
+
+          echo "--- 3) 数据备份归档存在且完整 ---"
+          BACKUP=$(sudo ls -t /opt/komari/backup/komari-migrate-*.tar.gz | head -1)
+          echo "backup: $BACKUP"
+          sudo tar -tzf "$BACKUP" | head -10
+          sudo tar -tzf "$BACKUP" | grep -q "./data/komari.db"
+
+          echo "--- 4) 来源标记已写入 ---"
+          sudo cat /opt/komari/.komari-stable-source
+
+          echo "--- 5) 数据未丢失（表行数不减少，DB 完整性 ok）---"
+          sudo sqlite3 /opt/komari/data/komari.db "PRAGMA integrity_check;"
+          : > /tmp/counts-after.txt
+          while read -r tbl; do
+            n=$(sudo sqlite3 /opt/komari/data/komari.db "select count(*) from \"$tbl\";" 2>/dev/null || echo '?')
+            printf '%s=%s\n' "$tbl" "$n" >> /tmp/counts-after.txt
+          done < /tmp/tables-before.txt
+          echo "迁移前:"; cat /tmp/counts-before.txt
+          echo "迁移后:"; cat /tmp/counts-after.txt
+          if diff -u /tmp/counts-before.txt /tmp/counts-after.txt; then
+            echo "OK: 迁移前后行数完全一致"
+          else
+            echo "NOTE: 行数有差异，请确认没有减少（上方 diff 中 '-' 行代表减少）"
+            ! diff /tmp/counts-before.txt /tmp/counts-after.txt | grep -q '^< .*=[1-9]'
+          fi
+          echo "--- 6) 官方实例的数据文件仍在原处 ---"
+          sudo ls -la /opt/komari/data | head -10
+          echo "--- 7) --status 输出 ---"
+          sudo env PATH=/tmp/stubbin:$PATH bash install-komari.sh --status
+
+      - name: Verify rollback when the new binary fails to start
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+          BEFORE=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          set +e
+          sudo env PATH=/tmp/stubbin:$PATH \
+            KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
+            KOMARI_TARGET_VERSION=v1.5.0-stable.0-broken \
+            bash install-komari.sh --migrate --yes > /tmp/rollback.log 2>&1
+          rc=$?
+          set -e
+          echo "migration rc=$rc (expect non-zero)"
+          [ "$rc" -ne 0 ]
+          echo "--- 旧二进制已回滚 ---"
+          AFTER=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          [ "$BEFORE" = "$AFTER" ] && echo "OK: 二进制已恢复为迁移前版本"
+          tail -12 /tmp/rollback.log
+          PATH=/tmp/stubbin:$PATH systemctl is-active komari.service && echo "OK: 服务仍在运行"
+
+      - name: Verify checksum mismatch aborts without touching anything
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+          BEFORE=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          set +e
+          sudo env PATH=/tmp/stubbin:$PATH \
+            KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
+            KOMARI_TARGET_VERSION=v1.5.0-stable.0-badsum \
+            bash install-komari.sh --migrate --yes > /tmp/badsum.log 2>&1
+          rc=$?
+          set -e
+          echo "migration rc=$rc (expect non-zero)"
+          [ "$rc" -ne 0 ]
+          grep -E "校验失败|checksum" /tmp/badsum.log || true
+          AFTER=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          [ "$BEFORE" = "$AFTER" ] && echo "OK: 校验失败时二进制未被替换"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "迁移测试完成；详细日志见各步骤输出。"
