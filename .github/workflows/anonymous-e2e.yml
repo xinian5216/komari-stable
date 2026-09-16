@@ -189,15 +189,22 @@ jobs:
           grep -a "Github Repo:\|Current version" /tmp/agent.log | tee /tmp/agent-version.txt
           grep -a "Github Repo: ${AGENT_REPO}" /tmp/agent-version.txt
 
-          echo "--- 指标库写入活动（证明 agent 在线并持续上报）---"
-          # 每次上报写入的是 metrics 库（clients.updated_at 仅在元数据变化时更新），
-          # 因此用 metrics 库（含 -wal）的文件大小/时间戳变化作为持续上报的证据。
-          stats() { sudo bash -c 'ls -l /opt/komari/data/metrics.db* 2>/dev/null | awk "{print \$5, \$6, \$7, \$8}"' | tr '\n' '|'; }
-          A=$(stats); echo "sample1: $A"
-          sleep 15
-          B=$(stats); echo "sample2: $B"
-          [ -n "$A" ] && [ "$A" != "$B" ]
-          echo "OK: 指标库持续写入 → agent 在线"
+          echo "--- 面板同款在线接口（WebSocket /api/clients 的 online 列表）---"
+          python3 -m pip install --quiet --disable-pip-version-check websocket-client
+          python3 - <<'PY'
+          import json, websocket
+          ws = websocket.create_connection("ws://127.0.0.1:25774/api/clients", timeout=15)
+          ws.send("get")
+          msg = json.loads(ws.recv())
+          online = list(msg.get("online") or [])
+          data = msg.get("data") or {}
+          print("online:", online)
+          print("reported uuids:", list(data.keys()))
+          ws.close()
+          assert online, f"the panel reports no online client: {msg}"
+          open("/tmp/node-online.txt", "w").write(",".join(online))
+          print("OK: 面板命令安装的节点已在线（online 列表非空）")
+          PY
 
       - name: "8) Verify the update checks point at our repositories (anonymous)"
         run: |
