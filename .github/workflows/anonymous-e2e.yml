@@ -160,37 +160,40 @@ jobs:
           echo "--- agent 单元 ---"
           cat /etc/systemd/system/komari-agent.service
 
-      - name: "6) Run the agent for real and watch the node come online"
+      - name: "6) Run the agent for real and prove the node keeps reporting"
         run: |
           set -euxo pipefail
           NODE_TOKEN=$(cat /tmp/node-token.txt)
-          sudo nohup /opt/komari/agent -e "http://127.0.0.1:${PORT}" -t "${NODE_TOKEN}" -i 5 > /tmp/agent.log 2>&1 &
+          (sudo nohup /opt/komari/agent -e "http://127.0.0.1:${PORT}" -t "${NODE_TOKEN}" -i 5 > /tmp/agent.log 2>&1 &)
           sleep 20
           echo "--- agent 日志（应显示本 fork 的仓库）---"
           grep -a "Github Repo:\|Current version\|Websocket\|connect" /tmp/agent.log | head -10 || true
           grep -a "Github Repo:" /tmp/agent.log | grep -q "${AGENT_REPO}"
           echo "OK: agent 自更新来源为 ${AGENT_REPO}"
 
-      - name: "7) Verify the node is online in the panel API"
-        run: |
-          set -euxo pipefail
-          sleep 10
+          echo "--- 节点上报内容（面板 API）---"
           curl -s -m 20 "http://127.0.0.1:${PORT}/api/nodes" > /tmp/nodes.json
-          head -c 600 /tmp/nodes.json; echo
           python3 - <<'PY'
           import json
           raw = json.load(open("/tmp/nodes.json"))
           data = raw.get("data") or raw
-          items = data if isinstance(data, list) else data.get("clients", data)
-          if isinstance(items, dict):
-              items = list(items.values())
+          items = data if isinstance(data, list) else list(data.values())
           assert items, f"no nodes returned: {raw}"
-          online = [c for c in items if c.get("online") or c.get("is_online")]
-          print(f"nodes={len(items)} online={len(online)}")
-          print(json.dumps(items[0], ensure_ascii=False)[:400])
-          assert online, "the node installed by the panel command never came online"
-          print("OK: 面板命令安装的节点已上线")
+          node = items[0]
+          print("node:", json.dumps({k: node.get(k) for k in ("uuid", "name", "version", "cpu_name", "os", "arch")}, ensure_ascii=False))
+          assert node.get("cpu_name"), "the node never reported any hardware info"
+          assert node.get("version"), "the node never reported its agent version"
+          open("/tmp/node-version.txt", "w").write(str(node.get("version")))
+          print("OK: 面板命令安装的节点已上报数据")
           PY
+
+          echo "--- 上报时间推进（证明 agent 在线并持续上报）---"
+          A=$(sudo sqlite3 /opt/komari/data/komari.db "select updated_at from clients limit 1;")
+          sleep 12
+          B=$(sudo sqlite3 /opt/komari/data/komari.db "select updated_at from clients limit 1;")
+          echo "updated_at: $A -> $B"
+          [ -n "$A" ] && [ -n "$B" ] && [ "$A" != "$B" ]
+          echo "OK: 节点持续上报（在线）"
 
       - name: "8) Verify the update checks point at our repositories (anonymous)"
         run: |
