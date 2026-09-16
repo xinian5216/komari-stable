@@ -86,6 +86,20 @@ LANGUAGE="zh"
 # 非交互输出只绘制一次横幅，交互终端则在每个步骤前刷新屏幕。
 SCREEN_DRAWN=0
 PROGRESS_STEPS=()
+# ------------------------------------------------------------------
+# 迁移（官方 Komari → Komari Stable）相关开关
+#   ASSUME_YES        非交互模式（--yes）：跳过确认提示，直接执行
+#   ACTION            非交互动作：install / upgrade / status / 空（交互菜单）
+#   TARGET_VERSION    固定目标版本（--target-version 或 KOMARI_TARGET_VERSION）
+#   SOURCE_MARKER     本 fork 安装后写入的来源标记文件
+#   V2_MIN_AGENT      1.5.0 服务端所要求的最低 Agent 版本（v2 协议）
+# ------------------------------------------------------------------
+ASSUME_YES=0
+ACTION=""
+TARGET_VERSION="${KOMARI_TARGET_VERSION:-}"
+SOURCE_MARKER="$INSTALL_DIR/.komari-stable-source"
+DATA_MIGRATION_BACKUP_DIR="$INSTALL_DIR/backup"
+V2_MIN_AGENT="1.4.0"
 
 # ==========================================================
 # 本地化文案
@@ -118,6 +132,82 @@ msg() {
         title_notice)
             en_text='Notice'
             zh_text='提示'
+            ;;
+        migrate_notice_title)
+            en_text='Migration / upgrade check'
+            zh_text='迁移 / 升级检查'
+            ;;
+        migrate_current_version)
+            en_text='Installed version : %s'
+            zh_text='当前版本：%s'
+            ;;
+        migrate_target_version)
+            en_text='Target version    : %s'
+            zh_text='目标版本：%s'
+            ;;
+        migrate_old_source)
+            en_text='Current source    : %s'
+            zh_text='旧来源：%s'
+            ;;
+        migrate_new_source)
+            en_text='Target source     : %s'
+            zh_text='目标来源：%s'
+            ;;
+        migrate_data_dir)
+            en_text='Data directory    : %s (kept in place, never re-created)'
+            zh_text='数据目录：%s（原地保留，不会重建）'
+            ;;
+        migrate_agent_warning)
+            en_text='Note: 1.5.0 and later speak only the v2 protocol. Make sure every node agent is %s or newer before upgrading, otherwise those nodes stop reporting.'
+            zh_text='注意：1.5.0 起服务端只支持 v2 协议。升级前请确认所有节点 Agent 版本不低于 %s，否则这些节点将无法上报。'
+            ;;
+        migrate_backup_start)
+            en_text='Creating a full backup of the data directory...'
+            zh_text='升级前创建完整数据备份...'
+            ;;
+        migrate_backup_done)
+            en_text='Backup created: %s'
+            zh_text='备份已创建：%s'
+            ;;
+        migrate_backup_failed)
+            en_text='Could not create the data backup. Upgrade stopped, nothing was changed.'
+            zh_text='无法创建数据备份，升级已中止，未做任何改动。'
+            ;;
+        migrate_rollback_start)
+            en_text='The new binary did not start the service. Rolling back...'
+            zh_text='新版本启动失败，正在回滚...'
+            ;;
+        migrate_rollback_done)
+            en_text='Rollback finished: the previous binary is running again.'
+            zh_text='回滚完成：已恢复旧版本运行。'
+            ;;
+        migrate_rollback_failed)
+            en_text='Rollback failed. Previous binary: %s / data backup: %s'
+            zh_text='回滚失败。旧二进制：%s / 数据备份：%s'
+            ;;
+        migrate_checksum_ok)
+            en_text='Checksum verified: %s'
+            zh_text='校验通过：%s'
+            ;;
+        migrate_checksum_failed)
+            en_text='Checksum mismatch (%s expected, %s actual). Upgrade stopped.'
+            zh_text='校验失败（期望 %s，实际 %s），升级已中止。'
+            ;;
+        migrate_checksum_missing)
+            en_text='This release publishes no .sha256 file, skipping checksum verification.'
+            zh_text='该版本未提供 .sha256 校验文件，跳过校验。'
+            ;;
+        migrate_confirm)
+            en_text='Continue with the migration / upgrade?'
+            zh_text='是否继续迁移 / 升级？'
+            ;;
+        migrate_done)
+            en_text='Migration complete: %s now runs version %s.'
+            zh_text='迁移完成：%s 现运行版本 %s。'
+            ;;
+        status_source)
+            en_text='Install source    : %s'
+            zh_text='安装来源：%s'
             ;;
         title_error)
             en_text='Error'
@@ -800,6 +890,13 @@ ASCII_ART
 
 # 设置发行版本，结果写入全局变量 EDITION / REPO。
 select_edition() {
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        EDITION="standard"
+        EDITION_NAME="$(msg edition_name_standard)"
+        REPO="$STANDARD_REPO"
+        log_info "edition: $EDITION_NAME"
+        return 0
+    fi
     local choice
     choice=$(ui_menu "$(msg edition_title)" "$(msg edition_prompt)" \
         "1" "$(msg edition_standard)" \
@@ -833,6 +930,14 @@ select_edition() {
 # 设置发布通道，结果写入全局变量 CHANNEL。
 select_channel() {
     local choice
+
+    if [ "$ASSUME_YES" -eq 1 ] && [ "$EDITION" != "lite" ]; then
+        CHANNEL="stable"
+        CHANNEL_NAME="$(msg channel_name_stable)"
+        progress_add "$CHANNEL_NAME"
+        log_info "$(msg selected_channel "$CHANNEL_NAME")"
+        return 0
+    fi
 
     if [ "$EDITION" = "lite" ]; then
         CHANNEL="stable"
@@ -1125,8 +1230,13 @@ install_binary() {
     select_edition
     select_channel
 
+    # 非交互模式（--yes）使用默认端口，不再提问
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        LISTEN_PORT="${LISTEN_PORT:-$DEFAULT_PORT}"
+    fi
+
     # 监听端口输入，校验范围 1-65535
-    while true; do
+    while [ -z "$LISTEN_PORT" ]; do
         local input_port
         if ! input_port=$(ui_input "$(msg port_title)" "$(msg port_prompt)" "$DEFAULT_PORT"); then
             log_info "$(msg install_cancelled)"
@@ -1183,6 +1293,7 @@ install_binary() {
 
     progress_add "$(msg progress_service)"
     create_systemd_service "$LISTEN_PORT"
+    write_source_marker "$(target_version_label)"
 
     systemctl daemon-reload
     systemctl enable ${SERVICE_NAME}.service
@@ -1260,6 +1371,143 @@ cleanup_backups() {
     ui_msgbox "$(msg title_cleanup_complete)" "$(msg cleanup_complete "${BINARY_PATH}.backup.*" "$BACKUP_DIR" "$DATA_BACKUP_DIR")"
 }
 
+# ------------------------------------------------------------------
+# 迁移支持：来源 / 版本识别、完整备份、校验与回滚
+# 官方安装脚本与本 fork 的安装路径一致（/opt/komari + komari.service），
+# 因此官方实例可被原地接管，无需卸载重装。
+# ------------------------------------------------------------------
+
+# 读取 systemd 单元里的监听端口；单元把 -l 写在 ExecStart。
+installed_listen_port() {
+    local unit="/etc/systemd/system/${SERVICE_NAME}.service"
+    local port=""
+    if [ -f "$unit" ]; then
+        port=$(sed -n 's/.*-l[[:space:]]*[^:[:space:]]*:\([0-9]\{1,5\}\).*/\1/p' "$unit" | head -1)
+    fi
+    if [ -n "$port" ]; then printf '%s' "$port"; else printf '%s' "$DEFAULT_PORT"; fi
+}
+
+# 当前版本：优先询问运行中的实例，其次扫描二进制里的版本字面量。
+detect_installed_version() {
+    local port version=""
+    if [ -f "$BINARY_PATH" ]; then
+        port=$(installed_listen_port)
+        if command -v curl >/dev/null 2>&1; then
+            version=$(curl -fsS -m 5 "http://127.0.0.1:${port}/api/version" 2>/dev/null \
+                | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        fi
+        if [ -z "$version" ]; then
+            version=$(grep -aoE '[0-9]+\.[0-9]+\.[0-9]+(-stable\.[0-9]+)?' "$BINARY_PATH" 2>/dev/null | head -1)
+        fi
+    fi
+    if [ -n "$version" ]; then printf '%s' "$version"; else printf '%s' "unknown"; fi
+}
+
+# 记录本 fork 的安装来源，供后续升级提示与来源核对使用。
+write_source_marker() {
+    local version="$1"
+    [ -d "$INSTALL_DIR" ] || return 0
+    {
+        printf 'repo=%s\n' "$STANDARD_REPO"
+        printf 'release_base=%s\n' "$RELEASE_BASE"
+        printf 'installed_version=%s\n' "$version"
+        printf 'installed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$SOURCE_MARKER" 2>/dev/null || true
+}
+
+# 旧来源：官方脚本不写来源标记，因此没有标记即视为官方/其他来源安装。
+installed_source() {
+    if [ -f "$SOURCE_MARKER" ]; then
+        local repo
+        repo=$(sed -n 's/^repo=//p' "$SOURCE_MARKER" | head -1)
+        if [ -n "$repo" ]; then printf 'Komari Stable (%s)' "$repo"; return; fi
+    fi
+    if [ -f "$BINARY_PATH" ]; then
+        printf '%s' "unknown (no komari-stable marker, assuming official/other install)"
+        return
+    fi
+    printf '%s' "none"
+}
+
+# 目标版本：默认取本仓库最新正式 Release，可用 --target-version 固定（回滚旧版本时用）。
+target_version_label() {
+    if [ -n "$TARGET_VERSION" ]; then printf '%s' "$TARGET_VERSION"; return; fi
+    local tag=""
+    if command -v curl >/dev/null 2>&1; then
+        tag=$(curl -fsSL -m 15 "${GITHUB_API_BASE}/repos/${REPO}/releases/latest" 2>/dev/null \
+            | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    fi
+    if [ -n "$tag" ]; then printf '%s' "$tag"; else printf '%s' "latest"; fi
+}
+
+# 迁移提示：当前版本 / 目标版本 / 旧来源 / 目标来源 + Agent 协议兼容性。
+show_migration_notice() {
+    local current target source
+    current=$(detect_installed_version)
+    target=$(target_version_label)
+    source=$(installed_source)
+
+    render_screen
+    ui_header "$(msg migrate_notice_title)"
+    printf '\n' >&2
+    printf '  %s\n' "$(msg migrate_current_version "$current")" >&2
+    printf '  %s\n' "$(msg migrate_target_version "$target")" >&2
+    printf '  %s\n' "$(msg migrate_old_source "$source")" >&2
+    printf '  %s\n' "$(msg migrate_new_source "$REPO ($RELEASE_BASE/$REPO)")" >&2
+    printf '  %s\n' "$(msg migrate_data_dir "$DATA_DIR/data")" >&2
+    printf '  %s\n' "$(msg migrate_agent_warning "$V2_MIN_AGENT")" >&2
+    printf '\n' >&2
+}
+
+confirm_migration() {
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        return 0
+    fi
+    ui_yesno "$(msg migrate_notice_title)" "$(msg migrate_confirm)"
+}
+
+# 完整数据备份：data/ 内含主库、metrics 库、配置、插件、plugin-data 与主题；
+# 只排除二进制自身与其备份。成功时把归档路径写入 DATA_BACKUP_ARCHIVE。
+DATA_BACKUP_ARCHIVE=""
+create_data_backup() {
+    local stamp="$1"
+    local archive="$DATA_MIGRATION_BACKUP_DIR/komari-migrate-${stamp}.tar.gz"
+    DATA_BACKUP_ARCHIVE=""
+    mkdir -p "$DATA_MIGRATION_BACKUP_DIR" || return 1
+    if ! tar -czf "$archive" -C "$INSTALL_DIR" \
+        --exclude=./komari --exclude='./komari.backup.*' --exclude=./backup . 2>/dev/null; then
+        rm -f "$archive"
+        return 1
+    fi
+    if [ ! -s "$archive" ]; then
+        rm -f "$archive"
+        return 1
+    fi
+    DATA_BACKUP_ARCHIVE="$archive"
+    return 0
+}
+
+# 校验：发布方提供 <二进制>.sha256 时强制校验，缺失则跳过（并在日志中说明）。
+verify_download() {
+    local url="$1" file="$2" expected actual
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        log_info "$(msg migrate_checksum_missing)"
+        return 0
+    fi
+    expected=$(curl -fsSL -m 20 "${url}.sha256" 2>/dev/null | awk '{print $1}' | head -1)
+    if [ -z "$expected" ]; then
+        log_info "$(msg migrate_checksum_missing)"
+        return 0
+    fi
+    actual=$(sha256sum "$file" | awk '{print $1}')
+    if [ "$expected" = "$actual" ]; then
+        log_success "$(msg migrate_checksum_ok "$actual")"
+        return 0
+    fi
+    log_error "$(msg migrate_checksum_failed "$expected" "$actual")"
+    return 1
+}
+
 # Upgrade function
 upgrade_komari() {
     progress_reset
@@ -1279,9 +1527,27 @@ upgrade_komari() {
     select_edition
     select_channel
 
+    # 迁移检查：显示当前/目标版本与来源，并提示 Agent 协议要求
+    show_migration_notice
+    if ! confirm_migration; then
+        log_info "$(msg install_cancelled)"
+        return 0
+    fi
+
+    # 1) 完整数据备份（失败即中止，未改动任何东西）
+    local stamp
+    stamp=$(date +%Y%m%d_%H%M%S)
+    log_step "$(msg migrate_backup_start)"
+    if ! create_data_backup "$stamp"; then
+        ui_msgbox "$(msg title_error)" "$(msg migrate_backup_failed)"
+        return 1
+    fi
+    log_success "$(msg migrate_backup_done "$DATA_BACKUP_ARCHIVE")"
+
     log_step "$(msg stopping_service)"
     systemctl stop ${SERVICE_NAME}.service
 
+    # 2) 二进制备份
     log_step "$(msg clearing_backups)"
     rm -f -- "${BINARY_PATH}.backup."*
 
@@ -1299,15 +1565,18 @@ upgrade_komari() {
     local download_url=$(get_download_url "$arch")
     if [ $? -ne 0 ]; then
         log_error "$(msg download_url_failed_log)"
-        mv "$backup_path" "$BINARY_PATH"
         systemctl start ${SERVICE_NAME}.service
         ui_msgbox "$(msg title_error)" "$(msg download_url_failed_restore)"
         return 1
     fi
 
+    # 3) 下载到暂存文件，校验通过后再落位
     progress_add "$(msg progress_download)"
     log_step "$(msg downloading_latest "$EDITION_NAME")"
-    if ! download_file "$download_url" "$BINARY_PATH" "$EDITION_NAME"; then
+    local staged="${BINARY_PATH}.new.${stamp}"
+    rm -f "$staged"
+    if ! download_file "$download_url" "$staged" "$EDITION_NAME"; then
+        rm -f "$staged"
         log_error "$(msg download_failed_log)"
         mv "$backup_path" "$BINARY_PATH"
         systemctl start ${SERVICE_NAME}.service
@@ -1315,18 +1584,41 @@ upgrade_komari() {
         return 1
     fi
 
-    chmod +x "$BINARY_PATH"
+    if ! verify_download "$download_url" "$staged"; then
+        rm -f "$staged"
+        mv "$backup_path" "$BINARY_PATH"
+        systemctl start ${SERVICE_NAME}.service
+        ui_msgbox "$(msg title_error)" "$(msg download_failed_restore)"
+        return 1
+    fi
 
+    chmod +x "$staged"
+    mv -f "$staged" "$BINARY_PATH"
+
+    # 4) 启动；启动失败则回滚旧二进制
     progress_add "$(msg progress_restart)"
     log_step "$(msg restart_start)"
     systemctl start ${SERVICE_NAME}.service
+    sleep 3
 
     if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+        write_source_marker "$(target_version_label)"
         progress_add "$(msg progress_complete)"
-        ui_msgbox "$(msg title_upgrade_complete)" "$(msg upgrade_success "$EDITION_NAME" "$CHANNEL_NAME")"
-    else
-        ui_msgbox "$(msg title_error)" "$(msg upgrade_start_failed)"
+        ui_msgbox "$(msg title_upgrade_complete)" "$(msg migrate_done "$SERVICE_NAME" "$(detect_installed_version)")"
+        return 0
     fi
+
+    log_error "$(msg migrate_rollback_start)"
+    systemctl stop ${SERVICE_NAME}.service >/dev/null 2>&1
+    cp "$backup_path" "$BINARY_PATH" 2>/dev/null
+    systemctl start ${SERVICE_NAME}.service
+    sleep 3
+    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+        ui_msgbox "$(msg title_error)" "$(msg migrate_rollback_done)"
+        return 1
+    fi
+    ui_msgbox "$(msg title_error)" "$(msg migrate_rollback_failed "$backup_path" "$DATA_BACKUP_ARCHIVE")"
+    return 1
 }
 
 # Uninstall function
@@ -1473,8 +1765,96 @@ main_menu() {
     done
 }
 
+# ------------------------------------------------------------------
+# 命令行参数（默认无参数时保持与官方脚本一致的交互菜单）
+# ------------------------------------------------------------------
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -y|--yes)
+                ASSUME_YES=1
+                ;;
+            --install)
+                ACTION="install"
+                ;;
+            --upgrade|--migrate)
+                ACTION="upgrade"
+                ;;
+            --status)
+                ACTION="status"
+                ;;
+            --target-version)
+                shift
+                TARGET_VERSION="${1:-}"
+                ;;
+            --target-version=*)
+                TARGET_VERSION="${1#*=}"
+                ;;
+            -h|--help)
+                cat <<'USAGE'
+Komari Stable installer
+  (no option)             interactive menu, same as the official installer
+  --install               install directly (requires no existing install)
+  --upgrade, --migrate    in-place upgrade / migrate from an official install
+                          (keeps data/, databases, config, plugins, themes)
+  --status                print installed version, source and service state
+  -y, --yes               non-interactive, assume yes (used by one-line migration)
+  --target-version TAG    pin the target release tag (for example to roll back)
+  environment: KOMARI_REPO_OWNER / KOMARI_REPO_NAME / KOMARI_RELEASE_BASE /
+               KOMARI_GITHUB_API_BASE / KOMARI_TARGET_VERSION
+USAGE
+                exit 0
+                ;;
+            *)
+                log_warning "unknown option: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
+print_status_report() {
+    local state="not installed"
+    if is_installed; then
+        if check_systemd && systemctl is-active --quiet ${SERVICE_NAME}.service; then
+            state="running (${SERVICE_NAME}.service)"
+        else
+            state="installed, service not running"
+        fi
+    fi
+    printf '%s\n' "$(msg migrate_current_version "$(detect_installed_version)")"
+    printf '%s\n' "$(msg status_source "$(installed_source)")"
+    printf '%s\n' "$(msg migrate_new_source "$REPO ($RELEASE_BASE/$REPO)")"
+    printf '  service: %s\n' "$state"
+    printf '  binary : %s\n' "$BINARY_PATH"
+    printf '  data   : %s/data\n' "$DATA_DIR"
+}
+
 # Main execution
-check_root
+parse_args "$@"
 init_colors
-select_language
-main_menu
+
+# 只读查询（--status）不需要 root
+if [ "$ACTION" = "status" ]; then
+    print_status_report
+    exit 0
+fi
+
+check_root
+
+case "$ACTION" in
+    install)
+        [ "$ASSUME_YES" -eq 1 ] || select_language
+        install_binary
+        exit $?
+        ;;
+    upgrade)
+        [ "$ASSUME_YES" -eq 1 ] || select_language
+        upgrade_komari
+        exit $?
+        ;;
+    *)
+        select_language
+        main_menu
+        ;;
+esac
