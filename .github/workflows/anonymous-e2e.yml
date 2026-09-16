@@ -58,14 +58,16 @@ jobs:
           mkdir -p "$state_dir"
           if [ "${1:-}" = "--user" ]; then exit 1; fi
           cmd="${1:-}"; shift || true
-          unit="${1:-}"
+          unit=""
+          for a in "$@"; do
+            case "$a" in
+              --*) ;;
+              *) unit="$a"; break ;;
+            esac
+          done
           case "$cmd" in
             is-active) [ -f "$state_dir/${unit}.active" ] && exit 0 || exit 3 ;;
-            start|enable|restart)
-              case "$unit" in
-                enable|restart) : ;;
-              esac
-              touch "$state_dir/${unit}.active" ;;
+            start|enable|restart) touch "$state_dir/${unit}.active" ;;
             stop|disable) rm -f "$state_dir/${unit}.active" ;;
             *) exit 0 ;;
           esac
