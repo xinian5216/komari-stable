@@ -19,149 +19,195 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: Environment facts
-        run: |
-          set -x
-          id
-          umask
-          uname -a
-          echo "TMPDIR=${TMPDIR:-<unset>}"
-          ls -ld /tmp
-          readlink -f /tmp
-          stat -c '%a %U:%G %n' /tmp
-          mount | grep -E ' on / | on /tmp ' | head -5
-          df -T /tmp | head -3
-
-      - name: Plain os.Root probe (isolates Go API from jsruntime logic)
+      - name: fs mode parsing probe (raw evidence)
         run: |
           set -euxo pipefail
-          mkdir -p /tmp/rootprobe && cd /tmp/rootprobe
-          go mod init rootprobe >/dev/null 2>&1
-          cat > main.go <<'EOF'
-          package main
-
-          import (
-          	"fmt"
-          	"os"
-          	"path/filepath"
-          )
-
-          func main() {
-          	base, err := os.MkdirTemp("", "probe")
-          	if err != nil {
-          		fmt.Println("MkdirTemp:", err)
-          		return
-          	}
-          	fmt.Printf("temp=%s\n", base)
-          	if fi, err := os.Stat(base); err == nil {
-          		fmt.Printf("temp mode=%v\n", fi.Mode())
-          	}
-
-          	r, err := os.OpenRoot(base)
-          	if err != nil {
-          		fmt.Println("OpenRoot:", err)
-          		return
-          	}
-          	defer r.Close()
-
-          	if err := r.MkdirAll("data", 0o777); err != nil {
-          		fmt.Println("root.MkdirAll(data,0777):", err)
-          	} else {
-          		fmt.Println("root.MkdirAll(data,0777): OK")
-          	}
-
-          	f, err := r.OpenFile(filepath.Join("data", "f.txt"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-          	if err != nil {
-          		fmt.Println("root.OpenFile(create):", err)
-          	} else {
-          		_, werr := f.WriteString("x")
-          		fmt.Println("root.OpenFile(create): OK, write err =", werr)
-          		f.Close()
-          	}
-
-          	if fi, err := r.Stat("data"); err == nil {
-          		fmt.Printf("root.Stat(data): mode=%v\n", fi.Mode())
-          	} else {
-          		fmt.Println("root.Stat(data):", err)
-          	}
-          	if fi, err := os.Stat(filepath.Join(base, "data")); err == nil {
-          		fmt.Printf("os.Stat(data): mode=%v\n", fi.Mode())
-          	} else {
-          		fmt.Println("os.Stat(data):", err)
-          	}
-          	if err := os.WriteFile(filepath.Join(base, "raw.txt"), []byte("x"), 0o600); err != nil {
-          		fmt.Println("os.WriteFile(raw, no root):", err)
-          	} else {
-          		fmt.Println("os.WriteFile(raw, no root): OK")
-          	}
-          	if err := r.RemoveAll("data"); err != nil {
-          		fmt.Println("root.RemoveAll(data):", err)
-          	} else {
-          		fmt.Println("root.RemoveAll(data): OK")
-          	}
-          }
-          EOF
-          go run .
-
-      - name: jsruntime-level probe (raw errno, created at runtime, not committed)
-        run: |
-          set -euxo pipefail
-          cat > pkg/jsruntime/zz_debug_probe_test.go <<'EOF'
+          cat > pkg/jsruntime/zz_debug_fs_test.go <<'EOF'
           package jsruntime
 
           import (
           	"fmt"
           	"io"
           	"os"
+          	"path/filepath"
           	"testing"
           	"time"
           )
 
-          func TestZZDebugProbe(t *testing.T) {
-          	fmt.Printf("euid=%d egid=%d umask=?\n", os.Geteuid(), os.Getegid())
+          // TestZZDebugFSProbe reports the on-disk mode of files created by the
+          // JS fs layer for the different argument shapes Node allows.
+          func TestZZDebugFSProbe(t *testing.T) {
           	base := t.TempDir()
-          	if fi, err := os.Stat(base); err == nil {
-          		fmt.Printf("tempdir=%s mode=%v\n", base, fi.Mode())
-          	}
-
           	rt, err := New(`
           		const fs = require("fs");
           		const path = require("path");
+          		function oct(mode) { return "0o" + (mode & 0o7777).toString(8); }
+          		function modeOf(p) { try { return oct(fs.statSync(p).mode); } catch (e) { return "ERR " + e.code; } }
           		function probe(label, fn) {
-          			try { fn(); return label + ": OK"; }
+          			try { fn(); return label + " => OK"; }
           			catch (e) {
-          				return label + ": ERR code=" + e.code + " errno=" + e.errno + " syscall=" + e.syscall +
-          					" path=" + e.path + " msg=" + String(e.message);
+          				return label + " => ERR code=" + e.code + " errno=" + e.errno +
+          					" syscall=" + e.syscall + " path=" + e.path;
           			}
           		}
           		function run() {
           			const out = [];
-          			out.push("cwd=" + process.cwd());
-          			out.push(probe("write-file-rel", () => fs.writeFileSync("p1.txt", "x")));
-          			out.push(probe("mkdir-data", () => fs.mkdirSync("data", { recursive: true })));
-          			out.push(probe("mkdir-data-777", () => fs.mkdirSync("data777", { recursive: true, mode: 0o777 })));
-          			out.push(probe("write-in-data", () => fs.writeFileSync("data/p2.txt", "x")));
-          			out.push(probe("write-in-data777", () => fs.writeFileSync("data777/p3.txt", "x")));
-          			out.push(probe("open-w-dir", () => { const fd = fs.openSync("data/p4.txt", "w"); fs.closeSync(fd); }));
-          			out.push(probe("write-abs", () => fs.writeFileSync(path.join(process.cwd(), "p5.txt"), "x")));
-          			out.push(probe("stat-cwd", () => { if (!fs.statSync(".").isDirectory()) throw new Error("not dir"); }));
-          			out.push(probe("readdir-data", () => fs.readdirSync("data")));
-          			return out.join("\n");
+          			out.push(probe("A writeFileSync(p,d,'utf8')", () => fs.writeFileSync("a.txt", "x", "utf8")));
+          			out.push("A mode=" + modeOf("a.txt"));
+          			out.push(probe("A readback", () => fs.readFileSync("a.txt", "utf8")));
+          			out.push(probe("B writeFileSync(p,d)", () => fs.writeFileSync("b.txt", "x")));
+          			out.push("B mode=" + modeOf("b.txt"));
+          			out.push(probe("B readback", () => fs.readFileSync("b.txt", "utf8")));
+          			out.push(probe("C writeFileSync(p,d,{mode:0o644})", () => fs.writeFileSync("c.txt", "x", { mode: 0o644 })));
+          			out.push("C mode=" + modeOf("c.txt"));
+          			out.push(probe("D appendFileSync(p,d,'utf8')", () => fs.appendFileSync("d.txt", "x", "utf8")));
+          			out.push("D mode=" + modeOf("d.txt"));
+          			out.push(probe("E openSync(p,'w','utf8')", () => { const fd = fs.openSync("e.txt", "w", "utf8"); fs.closeSync(fd); }));
+          			out.push("E mode=" + modeOf("e.txt"));
+          			out.push(probe("F mkdirSync('dir1')", () => fs.mkdirSync("dir1")));
+          			out.push("F mode=" + modeOf("dir1"));
+          			out.push(probe("G mkdirSync('dir2',{recursive:true})", () => fs.mkdirSync("dir2", { recursive: true })));
+          			out.push("G mode=" + modeOf("dir2"));
+          			out.push(probe("H mkdirSync('dir3','0755')", () => fs.mkdirSync("dir3", "0755")));
+          			out.push("H mode=" + modeOf("dir3"));
+          			out.push(probe("I write-in-dir1", () => fs.writeFileSync("dir1/x.txt", "x")));
+          			out.push(probe("I readback-dir1", () => fs.readFileSync("dir1/x.txt", "utf8")));
+          			throw new Error("\n" + out.join("\n"));
           		}
-          	`, Options{NodeJS: true, BaseDir: base, Console: io.Discard, Timeout: 5 * time.Second})
+          	`, Options{NodeJS: true, BaseDir: base, Console: io.Discard, Timeout: 10 * time.Second})
           	if err != nil {
           		t.Fatalf("runtime init: %v", err)
           	}
           	defer rt.Close()
           	if err := rt.Call("run"); err != nil {
-          		t.Fatalf("probe run: %v", err)
+          		t.Logf("PROBE REPORT:\n%v", err)
+          	}
+          	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "dir1", "dir2", "dir3"} {
+          		info, statErr := os.Stat(filepath.Join(base, name))
+          		if statErr != nil {
+          			fmt.Printf("GO-STAT %s: %v\n", name, statErr)
+          			continue
+          		}
+          		fmt.Printf("GO-STAT %s: mode=%v perm=%#o\n", name, info.Mode(), info.Mode().Perm())
           	}
           }
           EOF
-          go test ./pkg/jsruntime/ -run TestZZDebugProbe -v -count=1 2>&1 | tail -40
+          go test ./pkg/jsruntime/ -run TestZZDebugFSProbe -v -count=1 2>&1 | tail -60
+
+      - name: async fs API probe (fs.promises / callback paths)
+        run: |
+          set -euxo pipefail
+          cat > pkg/jsruntime/zz_debug_async_test.go <<'EOF'
+          package jsruntime
+
+          import (
+          	"fmt"
+          	"io"
+          	"os"
+          	"path/filepath"
+          	"testing"
+          	"time"
+          )
+
+          func TestZZDebugAsyncProbe(t *testing.T) {
+          	base := t.TempDir()
+          	rt, err := New(`
+          		const fs = require("fs");
+          		function oct(mode) { return "0o" + (mode & 0o7777).toString(8); }
+          		async function verify() {
+          			const out = [];
+          			out.push("cwd=" + process.cwd());
+          			await fs.promises.writeFile("p1.txt", "x", "utf8");
+          			out.push("promises.writeFile(p,d,'utf8') mode=" + oct(fs.statSync("p1.txt").mode));
+          			try { out.push("readback1=" + await fs.promises.readFile("p1.txt", "utf8")); }
+          			catch (e) { out.push("readback1 ERR code=" + e.code + " path=" + e.path); }
+          			await fs.promises.writeFile("p2.txt", "x");
+          			out.push("promises.writeFile(p,d) mode=" + oct(fs.statSync("p2.txt").mode));
+          			try { out.push("readback2=" + await fs.promises.readFile("p2.txt", "utf8")); }
+          			catch (e) { out.push("readback2 ERR code=" + e.code); }
+          			await new Promise((resolve, reject) => fs.writeFile("p3.txt", "x", "utf8", (e) => e ? reject(e) : resolve()));
+          			out.push("callback writeFile mode=" + oct(fs.statSync("p3.txt").mode));
+          			return out.join("\n");
+          		}
+          	`, Options{NodeJS: true, BaseDir: base, Console: io.Discard, Timeout: 10 * time.Second})
+          	if err != nil {
+          		t.Fatalf("runtime init: %v", err)
+          	}
+          	defer rt.Close()
+          	if err := rt.Call("verify"); err != nil {
+          		fmt.Printf("ASYNC PROBE ERR: %v\n", err)
+          	}
+          	for _, name := range []string{"p1.txt", "p2.txt", "p3.txt"} {
+          		info, statErr := os.Stat(filepath.Join(base, name))
+          		if statErr != nil {
+          			fmt.Printf("GO-STAT %s: %v\n", name, statErr)
+          			continue
+          		}
+          		fmt.Printf("GO-STAT %s: perm=%#o\n", name, info.Mode().Perm())
+          	}
+          }
+          EOF
+          go test ./pkg/jsruntime/ -run TestZZDebugAsyncProbe -v -count=1 2>&1 | tail -40
+
+      - name: child_process probe (which sub-condition fails)
+        run: |
+          set -euxo pipefail
+          cat > pkg/jsruntime/zz_debug_child_test.go <<'EOF'
+          package jsruntime
+
+          import (
+          	"fmt"
+          	"io"
+          	"testing"
+          	"time"
+          )
+
+          func TestZZDebugChildProbe(t *testing.T) {
+          	rt, err := New(`
+          		function verify(command) {
+          			const childProcess = require("child_process");
+          			const report = { command: command, steps: [] };
+          			let syncOutput = null, syncError = null;
+          			try { syncOutput = childProcess.execSync(command, { encoding: "utf8" }); }
+          			catch (e) { syncError = String(e); }
+          			report.syncOutput = JSON.stringify(syncOutput);
+          			report.syncTrimmed = JSON.stringify(syncOutput === null ? null : syncOutput.trim());
+          			report.syncError = syncError;
+          			return new Promise((resolve) => {
+          				try {
+          					const child = childProcess.spawn(command, [], { shell: true, encoding: "utf8" });
+          					report.pid = child.pid;
+          					report.hasStdout = !!child.stdout;
+          					if (!child.stdout) { resolve(JSON.stringify(report)); return; }
+          					let output = "";
+          					child.stdout.on("data", (chunk) => { output += String(chunk); });
+          					child.on("close", (code) => {
+          						report.exitCode = code;
+          						report.output = JSON.stringify(output);
+          						report.outputTrimmed = JSON.stringify(output.trim());
+          						resolve(JSON.stringify(report));
+          					});
+          					child.on("error", (e) => { report.spawnError = String(e); resolve(JSON.stringify(report)); });
+          				} catch (e) {
+          					report.thrown = String(e);
+          					resolve(JSON.stringify(report));
+          				}
+          			});
+          		}
+          	`, Options{NodeJS: true, AllowExec: true, BaseDir: t.TempDir(), Console: io.Discard, Timeout: 10 * time.Second})
+          	if err != nil {
+          		t.Fatalf("runtime init: %v", err)
+          	}
+          	defer rt.Close()
+          	if err := rt.Call("verify", "printf child"); err != nil {
+          		fmt.Printf("CHILD PROBE: Call returned error: %v\n", err)
+          	}
+          }
+          EOF
+          go test ./pkg/jsruntime/ -run TestZZDebugChildProbe -v -count=1 2>&1 | tail -40
 
       - name: The three failing tests, verbose
         run: |
           go test ./pkg/jsruntime/ -count=1 -v \
             -run 'TestNodeCoreModulesAndECMAScriptBuiltins|TestStorageDirIsConfinedAdditionalRoot|TestChildProcessPermissionAndExecution' \
-            2>&1 | tail -60
+            2>&1 | tail -30
