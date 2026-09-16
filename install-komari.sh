@@ -1400,7 +1400,12 @@ detect_installed_version() {
                 | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
         fi
         if [ -z "$version" ]; then
-            version=$(grep -aoE '[0-9]+\.[0-9]+\.[0-9]+(-stable\.[0-9]+)?' "$BINARY_PATH" 2>/dev/null | head -1)
+            # 二进制里会嵌入版本字面量，但第一个 semver 未必是本程序的版本
+            # （依赖库的版本号也可能命中），因此优先匹配本 fork 的 -stable.N 形态。
+            version=$(grep -aoE '[0-9]+\.[0-9]+\.[0-9]+-stable\.[0-9]+' "$BINARY_PATH" 2>/dev/null | head -1)
+            if [ -z "$version" ]; then
+                version=$(grep -aoE '[0-9]+\.[0-9]+\.[0-9]+' "$BINARY_PATH" 2>/dev/null | head -1)
+            fi
         fi
     fi
     if [ -n "$version" ]; then printf '%s' "$version"; else printf '%s' "unknown"; fi
