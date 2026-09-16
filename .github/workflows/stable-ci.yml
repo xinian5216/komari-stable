@@ -28,6 +28,17 @@ env:
   ZIG_VERSION: "0.14.1"
 
 jobs:
+  # 轻量校验：.agent/ 索引文件齐全、PROJECT_MAP 提到的路径存在（不做语义检查，避免误报）
+  agent-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check .agent index consistency
+        run: python scripts/check_agent_index.py
+
   # 所有需要编译 Go 代码的 job 都依赖前端产物（//go:embed defaultTheme/dist.tar.zst）
   build-frontend:
     runs-on: ubuntu-latest
