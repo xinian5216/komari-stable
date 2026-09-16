@@ -38,3 +38,74 @@ komari
 .codex
 
 /web/filemanager/data
+
+# ============================================================
+# Komari Stable: hardened ignores (file-shaped patterns only —
+# never substring globs that could hide real source files)
+# ============================================================
+
+# --- environment / credentials ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.ppk
+.ssh/
+credentials
+credentials.*
+secrets.yaml
+secrets.yml
+secrets.json
+*.secret
+
+# --- local databases / dumps ---
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+
+# --- logs & caches ---
+*.log
+logs/
+.cache/
+tmp/
+
+# --- editors / IDEs ---
+.idea/
+*.iml
+*.swp
+*.swo
+.history/
+*.code-workspace
+
+# --- OS noise ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- AI coding agent local state (must never be committed) ---
+.agent-cache/
+.agent/tmp/
+.ai/
+.cursor/
+.claude/
+.aider*
+codex.*
+
+# --- build outputs / generated bundles ---
+build/
+out/
+coverage.out
+coverage.html
+coverage.txt
+
+# The embedded default theme is generated at build time (frontend repo → tar+zstd).
+# Never commit it: CI builds it from the pinned frontend ref.
+web/public/defaultTheme/

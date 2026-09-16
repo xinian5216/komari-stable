@@ -1,0 +1,32 @@
+# gitleaks configuration for Komari Stable
+# CI 与本地都使用本文件：gitleaks git . --log-opts="--all" --config .gitleaks.toml
+#
+# 维护规则：
+#   1) 只允许把「经人工确认的非机密」写进 allowlist，并在注释 / PUBLIC_RELEASE_AUDIT.md 中说明原因；
+#   2) 不要按 *_test.go 之类的宽泛路径整体放行（会把真实泄漏一起放行）；
+#   3) 生成物（前端打包产物、构建输出）不应入库，直接忽略路径即可。
+
+title = "Komari Stable gitleaks configuration"
+
+[extend]
+# 继承 gitleaks 默认规则集
+useDefault = true
+
+# --- 1. 生成物 / 依赖目录：不入库，扫描时直接跳过 ---
+[[allowlists]]
+description = "Generated build artifacts and dependencies are never committed"
+paths = [
+  '''web/public/defaultTheme/.*''',
+  '''(^|/)dist/.*''',
+  '''(^|/)node_modules/.*''',
+]
+
+# --- 2. 已人工核实的非机密命中（上游公开代码中的测试夹具/常量）---
+# 依据：PUBLIC_RELEASE_AUDIT.md（gitleaks 2 条命中均为误报）
+[[allowlists]]
+description = "Verified false positives: upstream test fixture password and metric digest format constant"
+regexTarget = "match"
+regexes = [
+  '''Correct-horse-battery-staple''',   # web/install/install_test.go 测试夹具密码
+  '''legacy_tdigest_v1''',              # pkg/metric/digest_reclaim.go 摘要格式版本常量
+]
