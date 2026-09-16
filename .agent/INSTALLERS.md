@@ -10,16 +10,16 @@
 | 裸机安装脚本 | `install-komari.sh` | `${RELEASE_BASE}/${REPO}/releases/{latest/download|download/<tag>}`；API `${GITHUB_API_BASE}/repos/${REPO}/releases` | ✅ 已参数化（`REPO_OWNER` / `REPO_NAME` / `RELEASE_BASE` / `GITHUB_API_BASE`，均可用环境变量覆盖） |
 | Docker 镜像 | `.github/workflows/stable-release.yml` → `ghcr.io/${IMAGE_NAME}` | ghcr | ✅ 使用 `${{ github.repository }}`，自动指向 fork |
 | 发布资产（二进制） | `stable-release.yml` | GitHub Release 资产 `komari-<os>-<arch>[.exe]` + `SHA256SUMS` | ✅ 命名与 `install-komari.sh` 期望一致 |
-| Agent 安装命令 | 前端仓库（镜像后为 `komari-web-stable`）：`src/components/admin/NodeTable/NodeFunction.tsx`、`src/pages/admin/index.tsx` | 当前硬编码上游 `raw.githubusercontent.com/komari-monitor/komari-agent/...`；**决策：改为指向本 fork 的 `xinian5216/komari-agent-stable`** | 🚧 计划已定，待两个镜像仓库创建后落地（见 §2） |
+| Agent 安装命令 | 前端仓库 `xinian5216/komari-web-stable`：`src/lib/repoSources.ts`（集中定义）+ `src/components/admin/NodeTable/NodeFunction.tsx`、`src/pages/admin/index.tsx` | `https://raw.githubusercontent.com/xinian5216/komari-agent-stable/refs/heads/stable/install.{sh,ps1}`（由 `AGENT_INSTALL_RAW_BASE` 生成） | ✅ 已完成（web tag `v1.5.0-stable.0` 起生效） |
 | 更新说明 | 官方文档 `komari-document`（en/install/update.md） | 上游文档 | ⏳ fork 文档（README.md 已有简述） |
 
 ## 2. 待办（等仓库/镜像就绪后执行）
 
-1. **前端镜像**：`xinian5216/komari-web-stable`（源自上游 `komari-web`，固定 tag）——CI 已按此固定。
-2. **Agent 镜像（2026-09-16 决策）**：建立并维护 `xinian5216/komari-agent-stable`（源自上游
-   `komari-agent`），作为本 fork 的 Agent **安装与更新通道**；随后把前端生成的安装命令 URL
-   指向该仓库的 raw 地址。
-   ⚠️ 约束：Agent 侧仍使用 **v2 冻结协议**，改动仅限 Bug/安全修复；服务端必须继续兼容旧 Agent。
+1. **前端镜像**：`xinian5216/komari-web-stable`（源自上游 `komari-web`，固定 tag）——✅ 已创建，CI 已按此固定（`v1.5.0-stable.0`）。
+2. **Agent 镜像（2026-09-16 决策）**：`xinian5216/komari-agent-stable`——✅ 已创建（tag `v1.5.10-stable.0`），
+   安装/更新 URL 已指向该仓库。⚠️ 约束与现状：
+   - Agent 侧仍使用 **v2 冻结协议**，改动仅限 Bug/安全修复；服务端必须继续兼容旧 Agent；
+   - 仓库转 Public 之前，raw URL 与 Release 下载对终端用户不可用（Private 阶段预期）。
 3. **脚本自身分发地址**：如提供"一键安装"命令，形如
    `curl -fsSL <raw 地址>/install-komari.sh | bash`，raw 地址指向 `xinian5216/komari-stable`。
    目前 README 未写死一键命令——**发布后再补**。
