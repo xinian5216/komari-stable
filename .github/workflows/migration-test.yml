@@ -117,7 +117,10 @@ jobs:
           STUB
           sed -i 's/^          //' /tmp/stubbin/systemctl
           chmod +x /tmp/stubbin/systemctl
-          PATH=/tmp/stubbin:$PATH systemctl is-active komari.service; echo "is-active rc=$? (expect 3)"
+          set +e
+          PATH=/tmp/stubbin:$PATH systemctl is-active komari.service
+          echo "is-active rc=$? (expect 3)"
+          set -e
 
       - name: Install a real official Komari 1.4.3 instance
         run: |
@@ -155,10 +158,12 @@ jobs:
           curl -s -m 10 "http://127.0.0.1:25774/api/version"; echo
 
           echo "--- 记录迁移前的数据指纹 ---"
-          sudo bash -c 'ls -la /opt/komari /opt/komari/data | head -20'
+          sudo bash -c 'ls -la /opt/komari /opt/komari/data' > /tmp/ls-all.txt
+          head -20 /tmp/ls-all.txt
           sudo sqlite3 /opt/komari/data/komari.db "PRAGMA integrity_check;" > /tmp/db-integrity-before.txt
           cat /tmp/db-integrity-before.txt
-          sudo sqlite3 /opt/komari/data/komari.db ".tables" | tr -s ' ' '\n' | grep -v '^$' | sort > /tmp/tables-before.txt
+          sudo sqlite3 /opt/komari/data/komari.db ".tables" > /tmp/tables-raw.txt
+          tr -s ' ' '\n' < /tmp/tables-raw.txt | grep -v '^$' | sort > /tmp/tables-before.txt
           : > /tmp/counts-before.txt
           while read -r tbl; do
             n=$(sudo sqlite3 /opt/komari/data/komari.db "select count(*) from \"$tbl\";" 2>/dev/null || echo '?')
@@ -196,8 +201,9 @@ jobs:
           echo "--- 3) 数据备份归档存在且完整 ---"
           BACKUP=$(sudo ls -t /opt/komari/backup/komari-migrate-*.tar.gz | head -1)
           echo "backup: $BACKUP"
-          sudo tar -tzf "$BACKUP" | head -10
-          sudo tar -tzf "$BACKUP" | grep -q "./data/komari.db"
+          sudo tar -tzf "$BACKUP" > /tmp/backup-list.txt
+          head -10 /tmp/backup-list.txt
+          grep -q "./data/komari.db" /tmp/backup-list.txt
 
           echo "--- 4) 来源标记已写入 ---"
           sudo cat /opt/komari/.komari-stable-source
@@ -218,7 +224,7 @@ jobs:
             ! diff /tmp/counts-before.txt /tmp/counts-after.txt | grep -q '^< .*=[1-9]'
           fi
           echo "--- 6) 官方实例的数据文件仍在原处 ---"
-          sudo ls -la /opt/komari/data | head -10
+          sudo ls -la /opt/komari/data > /tmp/ls-data2.txt; head -10 /tmp/ls-data2.txt
           echo "--- 7) --status 输出 ---"
           sudo env PATH=/tmp/stubbin:$PATH bash install-komari.sh --status
 
