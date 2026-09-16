@@ -218,18 +218,20 @@ jobs:
           curl -fsS -m 20 "https://api.github.com/repos/${AGENT_REPO}/releases/latest" \
             | python3 -c "import json,sys; d=json.load(sys.stdin); print('latest:', d['tag_name']); print('assets:', [a['name'] for a in d['assets']])"
           echo "--- Agent 安装脚本的来源（匿名 raw）---"
-          curl -fsSL "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh" | grep -m2 -n "REPO_OWNER=\|REPO_NAME="
-          echo "--- 面板前端里的来源常量（匿名 raw）---"
-          curl -fsS -m 10 "http://127.0.0.1:${PORT}/" | grep -o 'entry-index[^"]*' | head -2
+          curl -fsSL -o /tmp/agent-install.sh "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
+          grep -n "REPO_OWNER=\|REPO_NAME=" /tmp/agent-install.sh
+          echo "--- 面板首页里的入口资源（服务端内嵌主题）---"
+          curl -fsS -m 10 -o /tmp/panel-index.html "http://127.0.0.1:${PORT}/"
+          awk 'match($0, /entry-index[^"]*/) { print substr($0, RSTART, RLENGTH) }' /tmp/panel-index.html
 
       - name: "9) Verify the web UI loads from the embedded theme"
         run: |
           set -euxo pipefail
           curl -s -m 15 -o /tmp/index.html -w "GET / -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}/"
           grep -q 'id="app"' /tmp/index.html && echo "OK: 面板 HTML（内嵌主题）正常返回"
-          entry=$(grep -o '/assets/[^"]*\.js' /tmp/index.html | head -1)
+          entry=$(awk -F'"' 'match($0, /\/assets\/[^"]*\.js/) { print substr($0, RSTART, RLENGTH); exit }' /tmp/index.html)
           curl -s -m 15 -o /tmp/entry.js -w "GET ${entry} -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}${entry}"
-          grep -o "xinian5216/[a-z-]*" /tmp/entry.js | sort -u | head -5 || true
+          grep -o "xinian5216/[a-z-]*" /tmp/entry.js | sort -u || true
 
       - name: "10) Report the versions in play"
         if: always()
