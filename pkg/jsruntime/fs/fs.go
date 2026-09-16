@@ -703,9 +703,16 @@ func fsMode(value goja.Value, fallback os.FileMode) os.FileMode {
 	}
 	if text, ok := value.Export().(string); ok {
 		mode, err := strconv.ParseUint(text, 8, 32)
-		if err == nil {
-			return os.FileMode(mode)
+		if err != nil {
+			// Node accepts an encoding string where an options object is
+			// expected, as in fs.writeFileSync(file, data, "utf8"). A string
+			// that is not an octal mode is therefore an encoding, not a mode:
+			// keep the default. Falling through to the numeric conversion
+			// below turned it into mode 0, which creates the file unreadable
+			// on Unix and read-only on Windows.
+			return fallback
 		}
+		return os.FileMode(mode)
 	}
 	return os.FileMode(value.ToInteger())
 }
