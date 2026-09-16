@@ -130,3 +130,42 @@
 5. 首次 Release（`1.5.0-stable.0`）由人工确认后再创建（本轮明确未创建）。
 6. **转 Public 之前，前端生成的 Agent 安装命令（raw.githubusercontent.com/xinian5216/komari-agent-stable/...）
    对终端用户不可访问**（Private 仓库的 raw URL 需要凭据）——因此"安装命令可用"这一项必须在转 Public 后复验。
+
+---
+
+## 附录：首次公开发布记录（1.5.0-stable.0）
+
+公开发布已完成，以下是可复现的发布事实（按时间顺序）。
+
+### 公开与安全开关
+
+| 项目 | 状态 |
+| --- | --- |
+| `komari-web-stable` | Public（先公开，Server CI 依赖它） |
+| `komari-agent-stable` | Public |
+| `komari-stable` | Public（最后公开） |
+| Secret Scanning / Push Protection | 三仓库均 enabled |
+| 默认分支 | 三仓库均为 `stable` |
+| 跨仓库私有凭据 | 已移除（前端改为匿名 HTTPS 拉取；Deploy Key 与 `FRONTEND_DEPLOY_KEY` 已删除） |
+
+### 冻结的版本
+
+| 仓库 | tag | 指向 commit | 说明 |
+| --- | --- | --- | --- |
+| komari-stable | `v1.5.0-stable.0` | `43953d6`（上游基线 `0ca87aa` = 1.5.0-fix1） | Release 已发布，附 `komari-linux-amd64`、`komari-linux-arm64`、`komari-windows-amd64.exe`、`SHA256SUMS` |
+| komari-web-stable | `v1.5.0-stable.0` | `c9d4749` | 前端镜像（CI 固定引用） |
+| komari-agent-stable | `v1.5.10-stable.0` | `84647ed` | Agent fork 首个 tag；Release 附各平台二进制 + 逐文件 `.sha256` + `SHA256SUMS` |
+
+说明：tag 之后的 `stable` 分支继续前进（迁移脚本、E2E 演练、文档），版本 tag 不移动、Release 产物与 tag 一致。
+
+### 发布验证
+
+- 正式二进制版本串：`1.5.0-stable.0`（无 `-candidate`；二进制中出现的 `candidate` 字样是 Go 标准库 TLS 错误文案）。
+- Docker：`ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0` 与浮动标签 `:stable`，多架构 `linux/amd64,linux/arm64`。
+- 匿名端到端演练（无 PAT、无本机源码、未登录 GitHub）：从 README 一键命令装 Server → 完成向导 → 面板 RPC 建节点 → 面板命令装 Agent → 节点在线（v2 协议）→ 版本与升级检查均指向本仓库 → 面板 Web 正常加载。
+- 迁移演练：官方 1.4.3（`bf6b45e`）实例 → 本 fork 原地升级（数据保留、自动备份、校验和验证、启动失败回滚）；官方 Agent → 本 fork 接管（参数与 token 保留）。
+
+### 已知未做项（有意为之）
+
+- 19 个仅在依赖模块中、本代码不可达的漏洞未处理。
+- 未开启 GitHub 平台级 “Release immutability”（该仓库设置为 UI 项，API 未暴露；本项目通过“不移动 tag + 发布产物附校验和”保证不可变语义）。
