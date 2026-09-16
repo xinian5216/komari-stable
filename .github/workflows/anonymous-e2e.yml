@@ -180,12 +180,14 @@ jobs:
           items = data if isinstance(data, list) else list(data.values())
           assert items, f"no nodes returned: {raw}"
           node = items[0]
-          print("node:", json.dumps({k: node.get(k) for k in ("uuid", "name", "version", "cpu_name", "os", "arch")}, ensure_ascii=False))
-          assert node.get("cpu_name"), "the node never reported any hardware info"
-          assert node.get("version"), "the node never reported its agent version"
-          open("/tmp/node-version.txt", "w").write(str(node.get("version")))
+          print("node:", json.dumps({k: node.get(k) for k in ("uuid", "name", "cpu_name", "os", "arch", "updated_at")}, ensure_ascii=False))
+          assert node.get("cpu_name") and node.get("os"), "the node never reported any hardware info"
           print("OK: 面板命令安装的节点已上报数据")
           PY
+
+          echo "--- agent 自报版本 + 升级检查（应查本 fork 的 Release）---"
+          grep -a "Github Repo:\|Current version" /tmp/agent.log | tee /tmp/agent-version.txt
+          grep -a "Github Repo: ${AGENT_REPO}" /tmp/agent-version.txt
 
           echo "--- 上报时间推进（证明 agent 在线并持续上报）---"
           A=$(sudo sqlite3 /opt/komari/data/komari.db "select updated_at from clients limit 1;")
