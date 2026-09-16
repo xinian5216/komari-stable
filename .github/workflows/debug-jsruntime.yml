@@ -19,45 +19,16 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: Patch the real test in place and repeat it 200 times
+      - name: Repeat the child_process tests on Linux
         run: |
-          set -euxo pipefail
-          # 就地在 runner 上修改 node_test.go（不提交）：把两处 resolve 换成会带出
-          # 失败现场的 reject，其余一字不改。
-          python - <<'PY'
-          import io
-          p = "pkg/jsruntime/node_test.go"
-          s = io.open(p, encoding="utf-8").read()
-
-          old_close = 'child.on("close", (code) => resolve(code === 0 && syncOutput === "child" && output.trim() === "child"));'
-          assert old_close in s, "close handler not found"
-          new_close = ('child.on("close", (code) => {'
-                       ' const verdict = (code === 0 && syncOutput === "child" && output.trim() === "child");'
-                       ' if (verdict) { resolve(true); return; }'
-                       ' reject(new Error(JSON.stringify({exitCode: code, exitType: typeof code,'
-                       ' syncOutput: String(syncOutput), syncOutputType: typeof syncOutput,'
-                       ' output: String(output), outputType: typeof output, pid: child.pid}))); });')
-          s = s.replace(old_close, new_close, 1)
-
-          old_error = 'child.on("error", () => resolve(false));'
-          assert old_error in s, "error handler not found"
-          s = s.replace(old_error,
-                        'child.on("error", (e) => reject(new Error("child error event: " + String(e) + " pid=" + child.pid)));',
-                        1)
-
-          io.open(p, "w", encoding="utf-8").write(s)
-          print("PATCHED IN PLACE")
-          PY
-          gofmt -l pkg/jsruntime/ || true
-
-          echo "########## 单次（确认仍可运行）##########"
-          go test ./pkg/jsruntime/ -run 'TestChildProcessPermissionAndExecution' -count=1 -v 2>&1 | tail -10
-
-          echo "########## 200 次重复，完整输出 ##########"
-          go test ./pkg/jsruntime/ -run 'TestChildProcessPermissionAndExecution' -count=200 -v > /tmp/repeat.log 2>&1 || true
-          echo "--- 失败次数 ---"
-          grep -c -- "--- FAIL" /tmp/repeat.log || true
-          echo "--- 失败现场（前 3 个）---"
-          grep -A1 -- "--- FAIL" /tmp/repeat.log | head -12
-          echo "--- 末尾 ---"
-          tail -3 /tmp/repeat.log
+          set -uxo pipefail
+          echo "########## child_process 全系列 x20 ##########"
+          go test ./pkg/jsruntime/ -run 'TestChildProcess|TestNodeChildProcessHelper|TestNodeFileCreationMode' -count=20 -timeout 10m > /tmp/child.log 2>&1
+          echo "exit=$?"
+          grep -c -- "--- FAIL" /tmp/child.log || true
+          tail -5 /tmp/child.log
+          echo "########## 整个 jsruntime 包 x3 ##########"
+          go test ./pkg/jsruntime/ -count=3 -timeout 15m > /tmp/pkg.log 2>&1
+          echo "exit=$?"
+          grep -c -- "--- FAIL" /tmp/pkg.log || true
+          tail -5 /tmp/pkg.log
