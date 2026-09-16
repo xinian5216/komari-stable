@@ -1,0 +1,175 @@
+name: Komari Stable Release
+
+# 发布流程：release published 时构建各平台二进制并上传 release 资产，
+# 随后构建并推送多架构 Docker 镜像。
+#   - 浮动 tag:  stable            （仅当该 release 是最新正式版时更新）
+#   - 不可变 tag: <release tag>    （例如 1.5.0-stable.1，永不覆盖）
+# 与上游 release.yml 的区别：
+#   1) 前端 ref 来自固定仓库 + 固定 ref（不解析 -fixN 后缀，不做默认分支回退）；
+#   2) Go 版本显式固定；
+#   3) 汇总生成 SHA256SUMS 并上传到 release。
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（手动重发时使用，例如 1.5.0-stable.1）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  FRONTEND_REPOSITORY: https://github.com/xinian5216/komari-web-stable
+  FRONTEND_REF: v1.5.0-stable.0
+  GO_VERSION: "1.25.x"
+  ZIG_VERSION: "0.14.1"
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: ./.github/actions/build-frontend
+        with:
+          repository: ${{ env.FRONTEND_REPOSITORY }}
+          ref: ${{ env.FRONTEND_REF }}
+          artifact-name: komari-frontend
+
+  build-and-attach-binaries:
+    needs: build-frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            zig_target: x86_64-linux-musl
+            ext: ""
+          - goos: linux
+            goarch: arm64
+            zig_target: aarch64-linux-musl
+            ext: ""
+          - goos: windows
+            goarch: amd64
+            zig_target: x86_64-windows-gnu
+            ext: ".exe"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: ./.github/actions/restore-frontend
+        with:
+          artifact-name: komari-frontend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: ./.github/actions/setup-zig
+        with:
+          zig-version: ${{ env.ZIG_VERSION }}
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CC: zig cc -target ${{ matrix.zig_target }}
+          GIN_MODE: release
+        run: |
+          set -euxo pipefail
+          NAME="komari-${GOOS}-${GOARCH}${{ matrix.ext }}"
+          go build -trimpath \
+            -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${RELEASE_TAG} -X github.com/komari-monitor/komari/utils.VersionHash=${GITHUB_SHA}" \
+            -o "$NAME" .
+          ls -la "$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: komari-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: komari-${{ matrix.goos }}-${{ matrix.goarch }}*
+      - name: Upload binary to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          NAME="komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          gh release upload "${RELEASE_TAG}" "$NAME" --repo "${{ github.repository }}"
+
+  checksums:
+    needs: build-and-attach-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: komari-*
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA256SUMS
+        run: |
+          set -euxo pipefail
+          cd dist
+          rm -f SHA256SUMS
+          sha256sum komari-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Upload SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${RELEASE_TAG}" dist/SHA256SUMS --clobber --repo "${{ github.repository }}"
+
+  build-and-push-docker:
+    needs: build-and-attach-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: komari-linux-*
+          path: .
+          merge-multiple: true
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve tags
+        id: tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          # 该 release 是否为最新正式版：是则同时更新浮动 tag "stable"
+          is_latest="$(gh api graphql \
+            -f 'query=query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { isLatest } } }' \
+            -F owner="${{ github.repository_owner }}" \
+            -F name="${{ github.event.repository.name }}" \
+            -F tag="${RELEASE_TAG}" \
+            --jq '.data.repository.release.isLatest')"
+          TAGS="${REGISTRY}/${IMAGE_NAME}:${RELEASE_TAG}"
+          if [ "$is_latest" = "true" ]; then
+            TAGS="${TAGS},${REGISTRY}/${IMAGE_NAME}:stable"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}

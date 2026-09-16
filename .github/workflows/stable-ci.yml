@@ -1,0 +1,127 @@
+name: Komari Stable CI
+
+# 稳定分支的持续集成：测试 / 静态检查 / 漏洞扫描 / 构建。
+# 与上游 build.yml 的区别：
+#   1) 上游 CI 从不运行 go test —— 这里把测试作为必过项；
+#   2) 前端 ref 固定（不跟随会漂移的默认分支）；
+#   3) Go 版本显式固定（上游写死 1.23，与 go.mod 的 1.25 不一致）；
+#   4) 新增 go vet 与 govulncheck。
+
+on:
+  pull_request:
+  push:
+    branches: [stable]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # ⚠️ 部署前请确认：前端使用自维护镜像仓库 + 固定 ref（tag/commit），保证构建可复现。
+  FRONTEND_REPOSITORY: https://github.com/xinian5216/komari-web-stable
+  FRONTEND_REF: v1.5.0-stable.0
+  GO_VERSION: "1.25.x"
+  ZIG_VERSION: "0.14.1"
+
+jobs:
+  # 所有需要编译 Go 代码的 job 都依赖前端产物（//go:embed defaultTheme/dist.tar.zst）
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-frontend
+        with:
+          repository: ${{ env.FRONTEND_REPOSITORY }}
+          ref: ${{ env.FRONTEND_REF }}
+          artifact-name: komari-frontend
+
+  test:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+        with:
+          artifact-name: komari-frontend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./... -count=1
+
+  vuln:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+        with:
+          artifact-name: komari-frontend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+          # 说明：出现"代码可达"漏洞时该步骤失败——这正是希望被看到的结果；
+          # 修复以独立的 security:/build: 提交进入，不在本 job 内自动升级依赖。
+
+  build:
+    needs: build-frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            zig_target: x86_64-linux-musl
+            ext: ""
+          - goos: linux
+            goarch: arm64
+            zig_target: aarch64-linux-musl
+            ext: ""
+          - goos: windows
+            goarch: amd64
+            zig_target: x86_64-windows-gnu
+            ext: ".exe"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+        with:
+          artifact-name: komari-frontend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: ./.github/actions/setup-zig
+        with:
+          zig-version: ${{ env.ZIG_VERSION }}
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CC: zig cc -target ${{ matrix.zig_target }}
+          GIN_MODE: release
+        run: |
+          set -euxo pipefail
+          NAME="komari-${GOOS}-${GOARCH}${{ matrix.ext }}"
+          go build -trimpath \
+            -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${GITHUB_REF_NAME} -X github.com/komari-monitor/komari/utils.VersionHash=${GITHUB_SHA}" \
+            -o "$NAME" .
+          sha256sum "$NAME" > "$NAME.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: komari-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            komari-${{ matrix.goos }}-${{ matrix.goarch }}*
