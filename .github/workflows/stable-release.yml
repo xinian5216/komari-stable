@@ -80,6 +80,10 @@ jobs:
       - uses: ./.github/actions/setup-zig
         with:
           zig-version: ${{ env.ZIG_VERSION }}
+      - name: Resolve the version string (release tag without the v prefix)
+        run: |
+          # tag 用 v1.5.0-stable.0，二进制内显示的版本必须是 1.5.0-stable.0
+          echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
@@ -91,7 +95,7 @@ jobs:
           set -euxo pipefail
           NAME="komari-${GOOS}-${GOARCH}${{ matrix.ext }}"
           go build -trimpath \
-            -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${RELEASE_TAG} -X github.com/komari-monitor/komari/utils.VersionHash=${GITHUB_SHA}" \
+            -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${VERSION} -X github.com/komari-monitor/komari/utils.VersionHash=${GITHUB_SHA}" \
             -o "$NAME" .
           ls -la "$NAME"
       - uses: actions/upload-artifact@v4
