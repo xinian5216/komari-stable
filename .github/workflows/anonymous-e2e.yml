@@ -189,13 +189,15 @@ jobs:
           grep -a "Github Repo:\|Current version" /tmp/agent.log | tee /tmp/agent-version.txt
           grep -a "Github Repo: ${AGENT_REPO}" /tmp/agent-version.txt
 
-          echo "--- 上报时间推进（证明 agent 在线并持续上报）---"
-          A=$(sudo sqlite3 /opt/komari/data/komari.db "select updated_at from clients limit 1;")
-          sleep 12
-          B=$(sudo sqlite3 /opt/komari/data/komari.db "select updated_at from clients limit 1;")
-          echo "updated_at: $A -> $B"
-          [ -n "$A" ] && [ -n "$B" ] && [ "$A" != "$B" ]
-          echo "OK: 节点持续上报（在线）"
+          echo "--- 指标库写入活动（证明 agent 在线并持续上报）---"
+          # 每次上报写入的是 metrics 库（clients.updated_at 仅在元数据变化时更新），
+          # 因此用 metrics 库（含 -wal）的文件大小/时间戳变化作为持续上报的证据。
+          stats() { sudo bash -c 'ls -l /opt/komari/data/metrics.db* 2>/dev/null | awk "{print \$5, \$6, \$7, \$8}"' | tr '\n' '|'; }
+          A=$(stats); echo "sample1: $A"
+          sleep 15
+          B=$(stats); echo "sample2: $B"
+          [ -n "$A" ] && [ "$A" != "$B" ]
+          echo "OK: 指标库持续写入 → agent 在线"
 
       - name: "8) Verify the update checks point at our repositories (anonymous)"
         run: |
