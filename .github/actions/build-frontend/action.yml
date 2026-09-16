@@ -7,10 +7,10 @@ inputs:
     default: "23"
   repository:
     description: komari-web repository URL (https for public repos, git@github.com:... when a deploy key is used).
-    default: https://github.com/komari-monitor/komari-web
+    default: https://github.com/xinian5216/komari-web-stable
   ref:
-    description: Optional komari-web ref to build. Uses the repository default branch when empty.
-    default: ""
+    description: Optional komari-web ref to build. Defaults to the currently pinned fork tag; CI passes this explicitly.
+    default: v1.5.0-stable.0
   artifact-name:
     description: Optional artifact name for the packed frontend theme.
     default: ""
