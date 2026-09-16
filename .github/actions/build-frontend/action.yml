@@ -6,13 +6,16 @@ inputs:
     description: Node.js version used to build komari-web.
     default: "23"
   repository:
-    description: komari-web repository URL.
+    description: komari-web repository URL (https for public repos, git@github.com:... when a deploy key is used).
     default: https://github.com/komari-monitor/komari-web
   ref:
     description: Optional komari-web ref to build. Uses the repository default branch when empty.
     default: ""
   artifact-name:
     description: Optional artifact name for the packed frontend theme.
+    default: ""
+  ssh-key:
+    description: Optional SSH deploy key (read-only) for cloning a private frontend repository. Leave empty for public repos.
     default: ""
 
 runs:
@@ -22,6 +25,16 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
+
+    - name: Configure SSH for a private frontend repository
+      if: ${{ inputs.ssh-key != '' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        printf '%s\n' "${{ inputs.ssh-key }}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
 
     - name: Install zstd
       shell: bash
@@ -43,6 +56,7 @@ runs:
           git clone --depth=1 "${{ inputs.repository }}" komari-web
         fi
         cd komari-web
+        echo "frontend commit: $(git rev-parse HEAD)"
         npm install
         npm run build
         cd ..

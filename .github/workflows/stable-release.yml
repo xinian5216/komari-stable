@@ -26,7 +26,8 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  FRONTEND_REPOSITORY: https://github.com/xinian5216/komari-web-stable
+  # 前端固定引用本 fork 的镜像仓库 + 固定 tag；Private 阶段使用只读 Deploy Key。
+  FRONTEND_REPOSITORY: git@github.com:xinian5216/komari-web-stable.git
   FRONTEND_REF: v1.5.0-stable.0
   GO_VERSION: "1.25.x"
   ZIG_VERSION: "0.14.1"
@@ -44,6 +45,7 @@ jobs:
           repository: ${{ env.FRONTEND_REPOSITORY }}
           ref: ${{ env.FRONTEND_REF }}
           artifact-name: komari-frontend
+          ssh-key: ${{ secrets.FRONTEND_DEPLOY_KEY }}
 
   build-and-attach-binaries:
     needs: build-frontend

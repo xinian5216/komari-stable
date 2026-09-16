@@ -1,0 +1,96 @@
+name: Docker Preview Build (no push)
+
+# 预演入口：只构建、不推送、不创建 Release、不覆盖任何正式 tag。
+# 用途：在不发布正式版本的前提下验证
+#   1) 固定前端 ref（komari-web-stable@v1.5.0-stable.0）能被嵌入；
+#   2) linux/amd64 与 linux/arm64 二进制可交叉编译；
+#   3) Dockerfile 在两个架构上都能构建成功。
+# 正式发布仍由 stable-release.yml（release published）负责。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FRONTEND_REPOSITORY: git@github.com:xinian5216/komari-web-stable.git
+  FRONTEND_REF: v1.5.0-stable.0
+  GO_VERSION: "1.25.x"
+  ZIG_VERSION: "0.14.1"
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-frontend
+        with:
+          repository: ${{ env.FRONTEND_REPOSITORY }}
+          ref: ${{ env.FRONTEND_REF }}
+          artifact-name: komari-frontend
+          ssh-key: ${{ secrets.FRONTEND_DEPLOY_KEY }}
+
+  build-docker-binaries:
+    needs: build-frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            zig_target: x86_64-linux-musl
+          - goarch: arm64
+            zig_target: aarch64-linux-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+        with:
+          artifact-name: komari-frontend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: ./.github/actions/setup-zig
+        with:
+          zig-version: ${{ env.ZIG_VERSION }}
+      - name: Build linux binary (preview)
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CC: zig cc -target ${{ matrix.zig_target }}
+          GIN_MODE: release
+        run: |
+          set -euxo pipefail
+          NAME="komari-linux-${{ matrix.goarch }}"
+          go build -trimpath \
+            -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=preview -X github.com/komari-monitor/komari/utils.VersionHash=${GITHUB_SHA}" \
+            -o "$NAME" .
+          ls -la "$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: komari-linux-${{ matrix.goarch }}
+          path: komari-linux-${{ matrix.goarch }}
+
+  docker-preview:
+    needs: build-docker-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: komari-linux-*
+          path: .
+          merge-multiple: true
+      - name: Show binaries for the image build
+        run: ls -la komari-linux-*
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build multi-arch image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          platforms: linux/amd64,linux/arm64
+          tags: komari-stable:preview-${{ github.sha }}

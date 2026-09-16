@@ -21,8 +21,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # ⚠️ 部署前请确认：前端使用自维护镜像仓库 + 固定 ref（tag/commit），保证构建可复现。
-  FRONTEND_REPOSITORY: https://github.com/xinian5216/komari-web-stable
+  # 前端固定引用本 fork 的镜像仓库 + 固定 tag（构建可复现）。
+  # 仓库当前为 Private，因此使用 SSH（只读 Deploy Key，见 secrets.FRONTEND_DEPLOY_KEY）；
+  # 若将来改为 Public，可换回 https://github.com/xinian5216/komari-web-stable 并移除 key/secret。
+  FRONTEND_REPOSITORY: git@github.com:xinian5216/komari-web-stable.git
   FRONTEND_REF: v1.5.0-stable.0
   GO_VERSION: "1.25.x"
   ZIG_VERSION: "0.14.1"
@@ -49,6 +51,7 @@ jobs:
           repository: ${{ env.FRONTEND_REPOSITORY }}
           ref: ${{ env.FRONTEND_REF }}
           artifact-name: komari-frontend
+          ssh-key: ${{ secrets.FRONTEND_DEPLOY_KEY }}
 
   test:
     needs: build-frontend
