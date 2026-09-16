@@ -1489,12 +1489,18 @@ create_data_backup() {
 
 # 校验：发布方提供 <二进制>.sha256 时强制校验，缺失则跳过（并在日志中说明）。
 verify_download() {
-    local url="$1" file="$2" expected actual
+    local url="$1" file="$2" asset="$3" expected actual sums_url
     if ! command -v sha256sum >/dev/null 2>&1; then
         log_info "$(msg migrate_checksum_missing)"
         return 0
     fi
+    # 优先取同名 .sha256；没有则回退到同一 release 目录下的 SHA256SUMS
     expected=$(curl -fsSL -m 20 "${url}.sha256" 2>/dev/null | awk '{print $1}' | head -1)
+    if [ -z "$expected" ] && [ -n "$asset" ]; then
+        sums_url="$(dirname "$url")/SHA256SUMS"
+        expected=$(curl -fsSL -m 20 "$sums_url" 2>/dev/null \
+            | awk -v n="$asset" '$2 == n || $2 == "*" n {print $1}' | head -1)
+    fi
     if [ -z "$expected" ]; then
         log_info "$(msg migrate_checksum_missing)"
         return 0
@@ -1584,7 +1590,7 @@ upgrade_komari() {
         return 1
     fi
 
-    if ! verify_download "$download_url" "$staged"; then
+    if ! verify_download "$download_url" "$staged" "komari-linux-${arch}"; then
         rm -f "$staged"
         mv "$backup_path" "$BINARY_PATH"
         systemctl start ${SERVICE_NAME}.service
