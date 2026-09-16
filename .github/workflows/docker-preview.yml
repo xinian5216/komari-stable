@@ -7,6 +7,7 @@ name: Docker Preview Build (no push)
 #   3) Dockerfile 在两个架构上都能构建成功。
 # 正式发布仍由 stable-release.yml（release published）负责。
 
+# (comment touch: re-index the workflow on the default branch)
 on:
   workflow_dispatch:
 
