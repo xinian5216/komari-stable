@@ -1,0 +1,218 @@
+name: Anonymous end-to-end install rehearsal
+
+# 以“未登录 GitHub、无 PAT、无本机源码”的视角，从 README 的一键命令开始走完整条链路：
+#   1. 匿名拉取 install-komari.sh 并全新安装 Server
+#   2. 启动 Server、完成安装向导、登录
+#   3. 通过面板同款 admin RPC 创建节点并取 token
+#   4. 用面板生成的那条命令（匿名 raw 地址）安装 Agent
+#   5. 启动 Agent，验证节点上线
+#   6. 验证版本、Server/Agent 的升级检查地址、Web 正常加载
+# 公开后由 workflow_dispatch 手动触发。
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_repo:
+        description: "Server repository (owner/name)"
+        default: xinian5216/komari-stable
+        type: string
+      agent_repo:
+        description: "Agent repository (owner/name)"
+        default: xinian5216/komari-agent-stable
+        type: string
+      branch:
+        description: "Branch that carries the install scripts"
+        default: stable
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  anonymous:
+    runs-on: ubuntu-latest
+    env:
+      SERVER_REPO: ${{ inputs.server_repo }}
+      AGENT_REPO: ${{ inputs.agent_repo }}
+      SCRIPT_BRANCH: ${{ inputs.branch }}
+      PORT: "25774"
+    steps:
+      - name: Drop every credential (anonymous viewpoint)
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/stubbin
+          rm -f ~/.git-credentials ~/.netrc
+          git config --global --unset-all credential.helper || true
+          env | grep -iE "token|secret|password" | sed 's/=.*/=<redacted>/' || echo "no credential env vars"
+          # 之后所有命令都显式不带 GH_TOKEN
+          echo "GH_TOKEN=" >> "$GITHUB_ENV"
+          echo "GITHUB_TOKEN=" >> "$GITHUB_ENV"
+
+      - name: Install a systemctl stub (hosted runners have no systemd)
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/stub-systemd
+          cat > /tmp/stubbin/systemctl <<'STUB'
+          #!/bin/bash
+          state_dir=/tmp/stub-systemd
+          mkdir -p "$state_dir"
+          if [ "${1:-}" = "--user" ]; then exit 1; fi
+          cmd="${1:-}"; shift || true
+          unit="${1:-}"
+          case "$cmd" in
+            is-active) [ -f "$state_dir/${unit}.active" ] && exit 0 || exit 3 ;;
+            start|enable|restart)
+              case "$unit" in
+                enable|restart) : ;;
+              esac
+              touch "$state_dir/${unit}.active" ;;
+            stop|disable) rm -f "$state_dir/${unit}.active" ;;
+            *) exit 0 ;;
+          esac
+          STUB
+          sed -i 's/^          //' /tmp/stubbin/systemctl
+          chmod +x /tmp/stubbin/systemctl
+          echo "/tmp/stubbin" >> "$GITHUB_PATH"
+
+      - name: "1) Fetch the installer exactly as the README says (anonymous)"
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o /tmp/install-komari.sh \
+            "https://raw.githubusercontent.com/${SERVER_REPO}/${SCRIPT_BRANCH}/install-komari.sh"
+          wc -l /tmp/install-komari.sh
+          head -3 /tmp/install-komari.sh
+          sha256sum /tmp/install-komari.sh
+
+      - name: "2) Fresh server install with the one-click command"
+        run: |
+          set -euxo pipefail
+          sudo env PATH="$PATH" bash /tmp/install-komari.sh --install --yes 2>&1 | tail -25
+          sudo ls -la /opt/komari
+          echo "--- 来源标记 ---"
+          sudo cat /opt/komari/.komari-stable-source
+          echo "--- systemd 单元 ---"
+          cat /etc/systemd/system/komari.service
+          echo "--- 安装来源核对（必须指向本 fork）---"
+          grep -o "komari-${SERVER_REPO#*/}-*" /opt/komari/.komari-stable-source || true
+          grep -q "${SERVER_REPO}" /opt/komari/.komari-stable-source
+
+      - name: "3) Run the server for real, complete the wizard, log in"
+        run: |
+          set -euxo pipefail
+          (cd /opt/komari && sudo nohup ./komari server -l 0.0.0.0:${PORT} > /tmp/server.log 2>&1 &)
+          sleep 10
+          curl -s -m 10 "http://127.0.0.1:${PORT}/api/install/status"; echo
+          curl -s -m 30 -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"e2eadmin","password":"E2eAdmin#2026","sitename":"Anonymous E2E","description":"anonymous install rehearsal","metric_dsn":"./data/metrics.db"}' \
+            -w ' install http=%{http_code}\n'
+          sleep 8
+          curl -s -m 10 "http://127.0.0.1:${PORT}/api/version" | tee /tmp/version.json; echo
+          curl -s -m 10 -X POST "http://127.0.0.1:${PORT}/api/login" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"e2eadmin","password":"E2eAdmin#2026"}' > /tmp/login.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/login.json"))
+          token = d["data"]["set-cookie"]["session_token"]
+          open("/tmp/session.txt", "w").write(token)
+          print("session token acquired:", token[:8] + "...")
+          PY
+
+      - name: "4) Create a node through the panel's admin RPC and read its token"
+        run: |
+          set -euxo pipefail
+          SESSION=$(cat /tmp/session.txt)
+          curl -s -m 20 -X POST "http://127.0.0.1:${PORT}/api/rpc2" \
+            -H "Content-Type: application/json" \
+            -H "Cookie: session_token=${SESSION}" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"admin:addClient","params":{"name":"e2e-node"}}' \
+            > /tmp/addnode.json
+          cat /tmp/addnode.json; echo
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/addnode.json"))
+          res = d.get("result") or {}
+          token = res.get("token") or ""
+          uuid = res.get("uuid") or ""
+          assert token and uuid, f"addClient failed: {d}"
+          open("/tmp/node-token.txt", "w").write(token)
+          open("/tmp/node-uuid.txt", "w").write(uuid)
+          print("node uuid:", uuid)
+          print("node token:", token[:8] + "...")
+          PY
+
+      - name: "5) Install the agent with the command the panel shows"
+        run: |
+          set -euxo pipefail
+          NODE_TOKEN=$(cat /tmp/node-token.txt)
+          # 面板生成的命令即：<raw>/install.sh | sudo bash -s -- -e <endpoint> -t <token>
+          curl -fsSL -o /tmp/agent-install.sh \
+            "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
+          grep -c "xinian5216/komari-agent-stable" /tmp/agent-install.sh
+          sudo env PATH="$PATH" bash /tmp/agent-install.sh \
+            -e "http://127.0.0.1:${PORT}" -t "${NODE_TOKEN}" -i 5 2>&1 | tail -20
+          echo "--- agent 单元 ---"
+          cat /etc/systemd/system/komari-agent.service
+
+      - name: "6) Run the agent for real and watch the node come online"
+        run: |
+          set -euxo pipefail
+          NODE_TOKEN=$(cat /tmp/node-token.txt)
+          sudo nohup /opt/komari/agent -e "http://127.0.0.1:${PORT}" -t "${NODE_TOKEN}" -i 5 > /tmp/agent.log 2>&1 &
+          sleep 20
+          echo "--- agent 日志（应显示本 fork 的仓库）---"
+          grep -a "Github Repo:\|Current version\|Websocket\|connect" /tmp/agent.log | head -10 || true
+          grep -a "Github Repo:" /tmp/agent.log | grep -q "${AGENT_REPO}"
+          echo "OK: agent 自更新来源为 ${AGENT_REPO}"
+
+      - name: "7) Verify the node is online in the panel API"
+        run: |
+          set -euxo pipefail
+          sleep 10
+          curl -s -m 20 "http://127.0.0.1:${PORT}/api/nodes" > /tmp/nodes.json
+          head -c 600 /tmp/nodes.json; echo
+          python3 - <<'PY'
+          import json
+          raw = json.load(open("/tmp/nodes.json"))
+          data = raw.get("data") or raw
+          items = data if isinstance(data, list) else data.get("clients", data)
+          if isinstance(items, dict):
+              items = list(items.values())
+          assert items, f"no nodes returned: {raw}"
+          online = [c for c in items if c.get("online") or c.get("is_online")]
+          print(f"nodes={len(items)} online={len(online)}")
+          print(json.dumps(items[0], ensure_ascii=False)[:400])
+          assert online, "the node installed by the panel command never came online"
+          print("OK: 面板命令安装的节点已上线")
+          PY
+
+      - name: "8) Verify the update checks point at our repositories (anonymous)"
+        run: |
+          set -euxo pipefail
+          echo "--- Server releases API ---"
+          curl -fsS -m 20 "https://api.github.com/repos/${SERVER_REPO}/releases?per_page=1" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print('latest:', d[0]['tag_name'], d[0]['html_url'])"
+          echo "--- Agent releases API ---"
+          curl -fsS -m 20 "https://api.github.com/repos/${AGENT_REPO}/releases/latest" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print('latest:', d['tag_name']); print('assets:', [a['name'] for a in d['assets']])"
+          echo "--- Agent 安装脚本的来源（匿名 raw）---"
+          curl -fsSL "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh" | grep -m2 -n "REPO_OWNER=\|REPO_NAME="
+          echo "--- 面板前端里的来源常量（匿名 raw）---"
+          curl -fsS -m 10 "http://127.0.0.1:${PORT}/" | grep -o 'entry-index[^"]*' | head -2
+
+      - name: "9) Verify the web UI loads from the embedded theme"
+        run: |
+          set -euxo pipefail
+          curl -s -m 15 -o /tmp/index.html -w "GET / -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}/"
+          grep -q 'id="app"' /tmp/index.html && echo "OK: 面板 HTML（内嵌主题）正常返回"
+          entry=$(grep -o '/assets/[^"]*\.js' /tmp/index.html | head -1)
+          curl -s -m 15 -o /tmp/entry.js -w "GET ${entry} -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}${entry}"
+          grep -o "xinian5216/[a-z-]*" /tmp/entry.js | sort -u | head -5 || true
+
+      - name: "10) Report the versions in play"
+        if: always()
+        run: |
+          echo "server /api/version:"; cat /tmp/version.json 2>/dev/null || true; echo
+          echo "agent 自报版本:"; grep -a "Current version" /tmp/agent.log | head -2 || true
+          echo "server 日志尾部:"; tail -5 /tmp/server.log || true
