@@ -1,7 +1,7 @@
 name: Debug jsruntime on Linux (temporary)
 
-# 临时诊断工作流：仅用于定位 pkg/jsruntime 在 Linux 上的测试失败根因。
-# 只读、无 secrets、不发布任何东西。定位完成后会在后续提交中删除。
+# 临时诊断工作流：仅用于验证 pkg/jsruntime 在 Linux 上的修复稳定性。
+# 只读、无 secrets、不发布任何东西。验证完成后会在后续提交中删除。
 
 on:
   workflow_dispatch:
@@ -19,16 +19,19 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: Repeat the child_process tests on Linux
+      - name: Repeat the child_process tests 100 times on Linux
         run: |
           set -uxo pipefail
-          echo "########## child_process 全系列 x20 ##########"
-          go test ./pkg/jsruntime/ -run 'TestChildProcess|TestNodeChildProcessHelper|TestNodeFileCreationMode' -count=20 -timeout 10m > /tmp/child.log 2>&1
+          echo "########## child_process 全系列 x100 ##########"
+          go test ./pkg/jsruntime/ -run 'TestChildProcess|TestNodeChildProcessHelper|TestNodeFileCreationMode' -count=100 -timeout 20m > /tmp/child100.log 2>&1
           echo "exit=$?"
-          grep -c -- "--- FAIL" /tmp/child.log || true
-          tail -5 /tmp/child.log
-          echo "########## 整个 jsruntime 包 x3 ##########"
-          go test ./pkg/jsruntime/ -count=3 -timeout 15m > /tmp/pkg.log 2>&1
+          echo -n "FAIL 次数: "; grep -c -- "--- FAIL" /tmp/child100.log || true
+          tail -3 /tmp/child100.log
+
+      - name: Whole package five times
+        run: |
+          set -uxo pipefail
+          go test ./pkg/jsruntime/ -count=5 -timeout 20m > /tmp/pkg5.log 2>&1
           echo "exit=$?"
-          grep -c -- "--- FAIL" /tmp/pkg.log || true
-          tail -5 /tmp/pkg.log
+          echo -n "FAIL 次数: "; grep -c -- "--- FAIL" /tmp/pkg5.log || true
+          tail -3 /tmp/pkg5.log
