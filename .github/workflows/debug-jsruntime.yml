@@ -19,10 +19,10 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: child_process probe (throw the report so Call surfaces it)
+      - name: child_process probe, exact mirror of the failing test
         run: |
           set -euxo pipefail
-          cat > pkg/jsruntime/zz_debug_child_test.go <<'EOF'
+          cat > pkg/jsruntime/zz_debug_child2_test.go <<'EOF'
           package jsruntime
 
           import (
@@ -32,54 +32,83 @@ jobs:
           	"time"
           )
 
-          func TestZZDebugChildProbe(t *testing.T) {
-          	rt, err := New(`
-          		function verify(command) {
-          			const childProcess = require("child_process");
-          			const report = { command: command };
-          			try {
-          				const raw = childProcess.execSync(command, { encoding: "utf8" });
-          				report.execSyncRaw = JSON.stringify(raw);
-          				report.execSyncTrimmed = JSON.stringify(raw === null || raw === undefined ? null : String(raw).trim());
-          			} catch (e) {
-          				report.execSyncError = String(e);
-          			}
-          			return new Promise((resolve) => {
-          				try {
-          					const child = childProcess.spawn(command, [], { shell: true, encoding: "utf8" });
-          					report.pid = child.pid;
-          					report.hasStdout = !!child.stdout;
-          					if (!child.stdout) { throw new Error("child.stdout is null"); }
-          					let output = "";
-          					child.stdout.on("data", (chunk) => { output += String(chunk); });
-          					child.on("close", (code) => {
-          						report.exitCode = code;
-          						report.outputRaw = JSON.stringify(output);
-          						report.outputTrimmed = JSON.stringify(output.trim());
-          						resolve();
-          					});
-          					child.on("error", (e) => { report.spawnError = String(e); resolve(); });
-          				} catch (e) {
-          					report.thrown = String(e);
-          					resolve();
-          				}
-          			}).then(() => { throw new Error(JSON.stringify(report)); });
+          const probeScript = `
+          	function verify(command) {
+          		const childProcess = require("child_process");
+          		const report = { command: command };
+          		try {
+          			const raw = childProcess.execSync(command, { encoding: "utf8" });
+          			report.execSyncRaw = JSON.stringify(raw);
+          			report.execSyncTrimmed = JSON.stringify(raw === null || raw === undefined ? null : String(raw).trim());
+          		} catch (e) {
+          			report.execSyncError = String(e);
           		}
-          	`, Options{NodeJS: true, AllowExec: true, BaseDir: t.TempDir(), Console: io.Discard, Timeout: 10 * time.Second})
+          		return new Promise((resolve) => {
+          			try {
+          				const child = childProcess.spawn(command, [], { shell: true, encoding: "utf8" });
+          				report.pid = child.pid;
+          				report.hasStdout = !!child.stdout;
+          				if (!child.stdout) { throw new Error("child.stdout is null"); }
+          				let output = "";
+          				child.stdout.on("data", (chunk) => { output += String(chunk); });
+          				child.on("close", (code) => {
+          					report.exitCode = code;
+          					report.outputRaw = JSON.stringify(output);
+          					report.outputTrimmed = JSON.stringify(output.trim());
+          					report.verdict = (code === 0 && report.execSyncTrimmed === "\"child\"" && output.trim() === "child");
+          					resolve();
+          				});
+          				child.on("error", (e) => { report.spawnError = String(e); resolve(); });
+          			} catch (e) {
+          				report.thrown = String(e);
+          				resolve();
+          			}
+          		}).then(() => { throw new Error(JSON.stringify(report)); });
+          	}
+          `
+
+          func runProbe(t *testing.T, label string, timeout time.Duration) {
+          	rt, err := New(probeScript, Options{NodeJS: true, AllowExec: true, BaseDir: t.TempDir(), Console: io.Discard, Timeout: timeout})
           	if err != nil {
-          		t.Fatalf("runtime init: %v", err)
+          		fmt.Printf("%s: init err: %v\n", label, err)
+          		return
           	}
           	defer rt.Close()
           	if err := rt.Call("verify", "printf child"); err != nil {
-          		fmt.Printf("CHILD PROBE REPORT: %v\n", err)
+          		fmt.Printf("%s: %v\n", label, err)
+          	} else {
+          		fmt.Printf("%s: Call returned nil (truthy result)\n", label)
           	}
           }
-          EOF
-          go test ./pkg/jsruntime/ -run TestZZDebugChildProbe -v -count=1 2>&1 | tail -20
 
-      - name: shell behaviour on this runner (for comparison)
-        run: |
-          set -x
-          /bin/sh -c "printf child"; echo " <- /bin/sh printf (no newline)"
-          /bin/sh -c "printf child" | od -c | head -2
-          command -v printf; type printf 2>&1 | head -2
+          // A: exactly like the failing test, including the "denied" runtime first.
+          func TestZZChildMirror(t *testing.T) {
+          	denied, err := New(`
+          		function verify() {
+          			try { require("child_process"); return false; }
+          			catch (error) { return String(error).includes("AllowExec"); }
+          		}
+          	`, Options{NodeJS: true, BaseDir: t.TempDir(), Console: io.Discard, Timeout: time.Second})
+          	if err != nil {
+          		t.Fatalf("denied init: %v", err)
+          	}
+          	if err := denied.Call("verify"); err != nil {
+          		fmt.Printf("A denied phase failed: %v\n", err)
+          	} else {
+          		fmt.Printf("A denied phase ok\n")
+          	}
+          	denied.Close()
+          	runProbe(t, "A mirror (denied first, Timeout=5s)", 5*time.Second)
+          }
+
+          // B: the same probe without the denied runtime.
+          func TestZZChildNoDenied(t *testing.T) {
+          	runProbe(t, "B no-denied (Timeout=5s)", 5*time.Second)
+          }
+
+          // C: the same probe with a longer timeout.
+          func TestZZChildLongTimeout(t *testing.T) {
+          	runProbe(t, "C no-denied (Timeout=30s)", 30*time.Second)
+          }
+          EOF
+          go test ./pkg/jsruntime/ -run 'TestZZChildMirror|TestZZChildNoDenied|TestZZChildLongTimeout' -v -count=1 2>&1 | tail -30
