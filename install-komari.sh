@@ -1069,6 +1069,9 @@ get_download_url() {
 
         log_info "$(msg snapshot_found "$latest_snapshot")" >&2
         echo "${RELEASE_BASE}/${REPO}/releases/download/${latest_snapshot}/${file_name}"
+    elif [ -n "$TARGET_VERSION" ]; then
+        # 明确指定版本（回滚或固定版本迁移）：走版本化下载地址
+        echo "${RELEASE_BASE}/${REPO}/releases/download/${TARGET_VERSION}/${file_name}"
     else
         # 稳定版：使用 latest
         echo "${RELEASE_BASE}/${REPO}/releases/latest/download/${file_name}"

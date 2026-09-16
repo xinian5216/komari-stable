@@ -70,6 +70,11 @@ jobs:
           cp /tmp/komari-linux-amd64 "$BADSUM/komari-linux-amd64"
           echo "0000000000000000000000000000000000000000000000000000000000000000" > "$BADSUM/komari-linux-amd64.sha256"
 
+          # 同时提供 releases/latest/download（稳定通道默认走这条路径）
+          LATEST=/tmp/site/xinian5216/komari-stable/releases/latest/download
+          mkdir -p "$LATEST"
+          cp "$GOOD/komari-linux-amd64" "$LATEST/komari-linux-amd64"
+          cp "$GOOD/komari-linux-amd64.sha256" "$LATEST/komari-linux-amd64.sha256"
           (cd /tmp/site && nohup python3 -m http.server 8899 >/tmp/http.log 2>&1 &)
           sleep 2
           curl -sI "http://127.0.0.1:8899/xinian5216/komari-stable/releases/download/v1.5.0-stable.0/komari-linux-amd64" | head -1
