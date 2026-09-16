@@ -56,7 +56,23 @@ BACKUP_DIR="$INSTALL_DIR/backup"
 DATA_BACKUP_DIR="$DATA_DIR/data/backup"
 DEFAULT_PORT="25774"
 LISTEN_PORT=""
-STANDARD_REPO="komari-monitor/komari"
+# ------------------------------------------------------------------
+# 仓库与发布来源（Fork 维护点）
+# 只在这里定义 owner/repo 与下载基址；其它位置一律引用变量，不要硬编码。
+#   REPO_OWNER   发布仓库的 GitHub 账号 / 组织
+#   REPO_NAME    发布仓库名
+#   RELEASE_BASE 发布下载基址（默认 GitHub；如需镜像/代理可覆盖）
+#   GITHUB_API_BASE  GitHub API 基址（默认官方；如需代理可覆盖）
+# 三个都可用环境变量覆盖，便于迁移账号或 Organization。
+# ------------------------------------------------------------------
+REPO_OWNER="${KOMARI_REPO_OWNER:-xinian5216}"
+REPO_NAME="${KOMARI_REPO_NAME:-komari-stable}"
+RELEASE_BASE="${KOMARI_RELEASE_BASE:-https://github.com}"
+GITHUB_API_BASE="${KOMARI_GITHUB_API_BASE:-https://api.github.com}"
+STANDARD_REPO="${REPO_OWNER}/${REPO_NAME}"
+# 上游官方仓库（已于 2026-09-15 归档）：保留仅用于对照/回退，不作为默认下载源
+UPSTREAM_REPO="komari-monitor/komari"
+# 第三方 Lite 分支（上游脚本中的可选发行版，非本 fork 维护）
 LITE_REPO="nuomiiiii/komari"
 REPO="$STANDARD_REPO"
 # 发行版本: standard（标准版）或 lite（Lite 轻量版）
@@ -939,7 +955,7 @@ get_download_url() {
     if [ "$CHANNEL" = "snapshot" ]; then
         # 获取最新的 snapshot 预发布版本
         log_info "$(msg fetch_snapshot)" >&2
-        local latest_snapshot=$(curl -s "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name"' | grep 'Snapshot-' | head -1 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
+        local latest_snapshot=$(curl -s "${GITHUB_API_BASE}/repos/${REPO}/releases" | grep '"tag_name"' | grep 'Snapshot-' | head -1 | sed -e 's/.*"tag_name": *"//' -e 's/".*//')
 
         if [ -z "$latest_snapshot" ]; then
             log_error "$(msg snapshot_not_found)" >&2
@@ -947,10 +963,10 @@ get_download_url() {
         fi
 
         log_info "$(msg snapshot_found "$latest_snapshot")" >&2
-        echo "https://github.com/${REPO}/releases/download/${latest_snapshot}/${file_name}"
+        echo "${RELEASE_BASE}/${REPO}/releases/download/${latest_snapshot}/${file_name}"
     else
         # 稳定版：使用 latest
-        echo "https://github.com/${REPO}/releases/latest/download/${file_name}"
+        echo "${RELEASE_BASE}/${REPO}/releases/latest/download/${file_name}"
     fi
 }
 
