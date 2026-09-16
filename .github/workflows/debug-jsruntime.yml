@@ -19,17 +19,15 @@ jobs:
         with:
           go-version: "1.25.x"
 
-      - name: Mirror the real test verbatim, with a diagnostic on failure
+      - name: Patch the real test in place and repeat it 200 times
         run: |
           set -euxo pipefail
-          cp pkg/jsruntime/node_test.go pkg/jsruntime/zzz_mirror_test.go
+          # 就地在 runner 上修改 node_test.go（不提交）：把两处 resolve 换成会带出
+          # 失败现场的 reject，其余一字不改。
           python - <<'PY'
-          import io, re
-          p = "pkg/jsruntime/zzz_mirror_test.go"
+          import io
+          p = "pkg/jsruntime/node_test.go"
           s = io.open(p, encoding="utf-8").read()
-
-          assert "func TestChildProcessPermissionAndExecution(" in s
-          s = s.replace("func TestChildProcessPermissionAndExecution(", "func TestZZZMirrorExact(", 1)
 
           old_close = 'child.on("close", (code) => resolve(code === 0 && syncOutput === "child" && output.trim() === "child"));'
           assert old_close in s, "close handler not found"
@@ -43,19 +41,23 @@ jobs:
 
           old_error = 'child.on("error", () => resolve(false));'
           assert old_error in s, "error handler not found"
-          new_error = ('child.on("error", (e) => reject(new Error("child error event: " + String(e)'
-                       ' + " pid=" + child.pid + " used=" + (child.exitCode) + "/" + (child.signalCode))));')
-          s = s.replace(old_error, new_error, 1)
+          s = s.replace(old_error,
+                        'child.on("error", (e) => reject(new Error("child error event: " + String(e) + " pid=" + child.pid)));',
+                        1)
 
           io.open(p, "w", encoding="utf-8").write(s)
-          print("mirror patched")
+          print("PATCHED IN PLACE")
           PY
-          gofmt -l pkg/jsruntime/zzz_mirror_test.go || true
+          gofmt -l pkg/jsruntime/ || true
 
-          echo "########## 200 次重复，打印失败现场 ##########"
-          go test ./pkg/jsruntime/ -run 'TestZZZMirrorExact' -count=200 -v 2>&1 \
-            | grep -E "error event|exitCode|Traceback|node_test.go|zzz_mirror_test.go|^(--- |ok|FAIL|PASS)" | head -40
+          echo "########## 单次（确认仍可运行）##########"
+          go test ./pkg/jsruntime/ -run 'TestChildProcessPermissionAndExecution' -count=1 -v 2>&1 | tail -10
 
-      - name: Same mirror, single run, for comparison
-        run: |
-          go test ./pkg/jsruntime/ -run 'TestZZZMirrorExact' -count=1 -v 2>&1 | tail -6
+          echo "########## 200 次重复，完整输出 ##########"
+          go test ./pkg/jsruntime/ -run 'TestChildProcessPermissionAndExecution' -count=200 -v > /tmp/repeat.log 2>&1 || true
+          echo "--- 失败次数 ---"
+          grep -c -- "--- FAIL" /tmp/repeat.log || true
+          echo "--- 失败现场（前 3 个）---"
+          grep -A1 -- "--- FAIL" /tmp/repeat.log | head -12
+          echo "--- 末尾 ---"
+          tail -3 /tmp/repeat.log
