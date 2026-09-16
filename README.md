@@ -60,8 +60,11 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 - 下载新二进制到暂存文件，**校验 `.sha256`**（发布方提供时强制校验）后再落位；
 - 启动失败时**自动回滚**旧二进制。
 
-> ⚠️ **升级前请确认 Agent 兼容性**：1.5.0 起服务端只支持 **v2 协议**。所有节点 Agent 需不低于
-> **1.4.0**，否则升级后这些节点将无法继续上报。用面板 nodes 页或 `journalctl -u komari-agent` 逐个确认。
+> ⚠️ **升级前请确认 Agent 兼容性**：服务端 1.5.0 起只接受 **v2 协议**。Agent 的 v2 支持自
+> **1.2.10** 引入（当时可选），**1.5.0 起 v2 成为唯一协议**。因此迁移前请确保每个节点的 Agent
+> **不低于 1.5.0**；如果个别节点仍在 1.2.10–1.4.x，需先确认它实际以 v2 上报，否则升级后无法上报。
+> 最稳妥的做法：先把所有 Agent 升级到 **v1.5.10-stable.0**（本 fork），再升级面板。
+> 逐个确认方式：面板 nodes 页，或 `journalctl -u komari-agent | grep -i "protocol\|version"`。
 
 #### 3. 全新安装 Agent
 
@@ -186,8 +189,10 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stable/migrate-komari-agent.sh | sudo bash -s -- -y
 ```
 
-Note: server 1.5.0 and later speak only the v2 protocol, so every node agent must be
-**1.4.0 or newer** before you migrate the panel.
+Note: server 1.5.0 and later speak only the v2 protocol. Agent-side v2 support landed in
+**1.2.10** (opt-in) and became the only protocol in agent **1.5.0**, so make sure every node runs
+agent **1.5.0 or newer** before migrating the panel - safest is to move the agents to
+**v1.5.10-stable.0** first.
 
 ## Upstream & Credits / 上游与致谢
 
