@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euxo pipefail
           NAME="komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          gh release upload "${RELEASE_TAG}" "$NAME" --repo "${{ github.repository }}"
+          gh release upload "${RELEASE_TAG}" "$NAME" --clobber --repo "${{ github.repository }}"
 
   checksums:
     needs: build-and-attach-binaries
