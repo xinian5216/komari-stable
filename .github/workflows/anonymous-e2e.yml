@@ -151,7 +151,10 @@ jobs:
           # 面板生成的命令即：<raw>/install.sh | sudo bash -s -- -e <endpoint> -t <token>
           curl -fsSL -o /tmp/agent-install.sh \
             "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
-          grep -c "xinian5216/komari-agent-stable" /tmp/agent-install.sh
+          # 安装脚本的来源必须是本 fork（owner/name 以默认值形式声明），且不得再出现上游仓库
+          grep -q 'REPO_OWNER:-xinian5216' /tmp/agent-install.sh
+          grep -q 'REPO_NAME:-komari-agent-stable' /tmp/agent-install.sh
+          ! grep -q 'komari-monitor/komari-agent' /tmp/agent-install.sh
           sudo env PATH="$PATH" bash /tmp/agent-install.sh \
             -e "http://127.0.0.1:${PORT}" -t "${NODE_TOKEN}" -i 5 2>&1 | tail -20
           echo "--- agent 单元 ---"
