@@ -220,6 +220,11 @@ jobs:
           echo "--- Agent 安装脚本的来源（匿名 raw）---"
           curl -fsSL -o /tmp/agent-install.sh "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
           grep -n "REPO_OWNER=\|REPO_NAME=" /tmp/agent-install.sh
+          echo "--- 装到本机的二进制是否就是最新 Release（即 Server update check 的结论）---"
+          latest_tag="$(curl -fsS -m 20 "https://api.github.com/repos/${SERVER_REPO}/releases/latest" | python3 -c "import json,sys;print(json.load(sys.stdin)['tag_name'])")"
+          server_version="$(python3 -c "import json;print(json.load(open('/tmp/version.json'))['version'])")"
+          echo "latest release tag = ${latest_tag}; installed server reports = ${server_version}"
+          [ "v${server_version}" = "${latest_tag}" ] || { echo "FAIL: the installed binary is not the latest release of ${SERVER_REPO}"; exit 1; }
           echo "--- 首页与后台分别由谁提供（stable.1 起：/ 用随包主题，/admin 用嵌入式默认前端）---"
           curl -fsS -m 10 -o /tmp/panel-index.html "http://127.0.0.1:${PORT}/"
           grep -qE "__next|_next/" /tmp/panel-index.html && echo "OK: / 由随包 Komari Next 主题提供"
