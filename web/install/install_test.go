@@ -5,19 +5,54 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/komari-monitor/komari/internal/metricstore"
 	"github.com/komari-monitor/komari/database/models"
 	appconfig "github.com/komari-monitor/komari/internal/config"
+	"github.com/komari-monitor/komari/internal/metricstore"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
+// cleanupEmptyRuntimeDirs removes runtime directories a test run created in the
+// source tree, and only when they are empty. A directory with any content is left
+// untouched, so this can never delete real data.
+func cleanupEmptyRuntimeDirs(t *testing.T, root string) {
+	t.Helper()
+	if root == "" {
+		return
+	}
+	for _, dir := range []string{filepath.Join(root, "data", "theme"), filepath.Join(root, "data")} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return // does not exist (any more): nothing to clean up
+		}
+		if len(entries) != 0 {
+			return // holds content, never touch it
+		}
+		if err := os.Remove(dir); err != nil {
+			t.Logf("could not remove the empty directory %s: %v", dir, err)
+		}
+	}
+}
+
 func setupInstallRouter(t *testing.T) (*gin.Engine, *gorm.DB, *Controller) {
 	t.Helper()
+	// web/public extracts nothing but still mkdirs ./data/theme from its package
+	// init, which runs before this test in the original working directory. Remember
+	// that directory so the run can leave the source tree exactly as it found it.
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	// Everything the installer writes (data/theme/<short>, ...) is relative to the
+	// working directory, so run each installer test inside its own temporary
+	// directory instead of polluting the source tree.
+	t.Chdir(t.TempDir())
+	t.Cleanup(func() { cleanupEmptyRuntimeDirs(t, original) })
 	db, err := gorm.Open(sqlite.Open("file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "install.db"))+"?mode=rwc"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open install database: %v", err)
