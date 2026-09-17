@@ -2,8 +2,8 @@ name: Migration test (official install -> Komari Stable)
 
 # 端到端验证 install-komari.sh 的迁移/升级路径：
 #   1. 安装真实的官方 1.4.3（bf6b45e）实例到 /opt/komari + komari.service，并完成安装向导
-#   2. 用本仓库脚本原地迁移到 1.5.0-stable.0（发布产物通过本地 HTTP 提供）
-#   3. 校验：数据不丢、备份已建、来源标记、版本变化、校验和失败中止、启动失败回滚
+#   2. 保持旧服务运行，由脚本先下载校验、停机冷备份，再迁移到测试 Stable 构建
+#   3. 校验：具体数据不丢、离线备份、真实 HTTP 健康、校验和 fail-closed、数据+二进制回滚
 # 只读、无 secrets；所有改动都发生在这台 runner 上。
 
 on:
@@ -57,7 +57,9 @@ jobs:
           GOOD=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0
           BROKEN=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0-broken
           BADSUM=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0-badsum
-          mkdir -p "$GOOD" "$BROKEN" "$BADSUM"
+          NOCHECK=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0-nocheck
+          WRONGVER=/tmp/site/xinian5216/komari-stable/releases/download/v1.5.0-stable.0-wrong-version
+          mkdir -p "$GOOD" "$BROKEN" "$BADSUM" "$NOCHECK" "$WRONGVER"
           cp /tmp/komari-linux-amd64 "$GOOD/komari-linux-amd64"
           (cd "$GOOD" && sha256sum komari-linux-amd64 | awk '{print $1}' > komari-linux-amd64.sha256)
 
@@ -70,6 +72,13 @@ jobs:
           cp /tmp/komari-linux-amd64 "$BADSUM/komari-linux-amd64"
           echo "0000000000000000000000000000000000000000000000000000000000000000" > "$BADSUM/komari-linux-amd64.sha256"
 
+          # 无任何校验和：本 fork 必须 fail closed
+          cp /tmp/komari-linux-amd64 "$NOCHECK/komari-linux-amd64"
+
+          # 文件与校验和正确，但 tag 和 /api/version 不一致：健康检查必须拒绝
+          cp /tmp/komari-linux-amd64 "$WRONGVER/komari-linux-amd64"
+          (cd "$WRONGVER" && sha256sum komari-linux-amd64 | awk '{print $1}' > komari-linux-amd64.sha256)
+
           # 同时提供 releases/latest/download（稳定通道默认走这条路径）
           LATEST=/tmp/site/xinian5216/komari-stable/releases/latest/download
           mkdir -p "$LATEST"
@@ -79,42 +88,63 @@ jobs:
           sleep 2
           curl -sI "http://127.0.0.1:8899/xinian5216/komari-stable/releases/download/v1.5.0-stable.0/komari-linux-amd64" | head -1
 
-      - name: systemctl stub (records state, really executes ExecStart)
+      - name: systemctl stub (keeps the real ExecStart process alive)
         run: |
           set -euxo pipefail
           mkdir -p /tmp/stubbin /tmp/stub-systemd
           cat > /tmp/stubbin/systemctl <<'STUB'
           #!/bin/bash
+          set -u
           state_dir=/tmp/stub-systemd
           mkdir -p "$state_dir"
           cmd="${1:-}"; shift || true
-          unit="${1:-}"
+          unit=""
+          for arg in "$@"; do
+            case "$arg" in --*) ;; *) unit="$arg"; break ;; esac
+          done
+          pid_file="$state_dir/${unit}.pid"
+          is_running() {
+            [ -s "$pid_file" ] || return 1
+            pid=$(cat "$pid_file")
+            kill -0 "$pid" 2>/dev/null
+          }
           case "$cmd" in
             is-active)
-              [ -f "$state_dir/active" ] && exit 0 || exit 3
+              is_running && exit 0 || exit 3
               ;;
             start)
-              # 真正按单元的 ExecStart 跑一次，1 秒内退出即视为启动失败
+              is_running && exit 0
               exe=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "/etc/systemd/system/$unit" | head -1)
               args=$(sed -n 's/^ExecStart=[^ ]*[[:space:]]*//p' "/etc/systemd/system/$unit" | head -1)
+              workdir=$(sed -n 's/^WorkingDirectory=//p' "/etc/systemd/system/$unit" | head -1)
+              [ -n "$workdir" ] || workdir=/
               [ -x "$exe" ] || { echo "stub: $exe missing or not executable" >&2; exit 1; }
-              # shellcheck disable=SC2086
-              timeout 4 "$exe" $args >/tmp/stub-service.log 2>&1 &
-              pid=$!
+              (
+                cd "$workdir"
+                # shellcheck disable=SC2086
+                nohup "$exe" $args >/tmp/stub-service.log 2>&1 &
+                echo $! > "$pid_file"
+              )
               sleep 1
-              if kill -0 "$pid" 2>/dev/null; then
-                touch "$state_dir/active"
-                wait "$pid" 2>/dev/null || true
-                exit 0
-              fi
-              wait "$pid" 2>/dev/null; rc=$?
-              echo "stub: service exited early rc=$rc" >&2
-              rm -f "$state_dir/active"
+              is_running && exit 0
+              echo "stub: service exited early" >&2
+              rm -f "$pid_file"
               exit 1
               ;;
             stop)
-              rm -f "$state_dir/active"
+              if is_running; then
+                pid=$(cat "$pid_file")
+                kill -TERM "$pid" 2>/dev/null || true
+                for _ in $(seq 1 40); do
+                  kill -0 "$pid" 2>/dev/null || break
+                  sleep 0.1
+                done
+                if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+              fi
+              rm -f "$pid_file"
               ;;
+            restart) "$0" stop "$unit"; "$0" start "$unit" ;;
+            daemon-reload|enable|disable) exit 0 ;;
             *)
               exit 0
               ;;
@@ -151,9 +181,8 @@ jobs:
           sudo cp /tmp/komari.service /etc/systemd/system/komari.service
           cat /etc/systemd/system/komari.service
 
-          echo "--- 启动官方 1.4.3 并完成安装向导 ---"
-          (cd /opt/komari && sudo ./komari server -l 127.0.0.1:25774 >/tmp/official-server.log 2>&1 &)
-          sleep 10
+          echo "--- 通过 systemctl stub 真正启动官方 1.4.3 并完成安装向导 ---"
+          sudo env PATH=/tmp/stubbin:$PATH systemctl start komari.service
           curl -s -m 10 "http://127.0.0.1:25774/api/install/status"; echo
           curl -s -m 20 -X POST http://127.0.0.1:25774/api/install/complete \
             -H 'Content-Type: application/json' \
@@ -161,6 +190,57 @@ jobs:
             -w ' install http=%{http_code}\n'
           sleep 8
           curl -s -m 10 "http://127.0.0.1:25774/api/version"; echo
+
+          echo "--- 停机一次，写入覆盖节点/通知/Ping/插件/主题/指标历史的真实夹具 ---"
+          sudo env PATH=/tmp/stubbin:$PATH systemctl stop komari.service
+          sudo sqlite3 /opt/komari/data/komari.db <<'SQL'
+          INSERT INTO clients(uuid,token,name,cpu_name,arch,os,mem_total,disk_total,version,weight,created_at,updated_at)
+          VALUES('11111111-1111-1111-1111-111111111111','token-preserve','Fixture Node','Fixture CPU','amd64','Debian 12',4294967296,107374182400,'1.5.10',10,datetime('now'),datetime('now'));
+          INSERT INTO offline_notifications(client,enable,grace_period)
+          VALUES('11111111-1111-1111-1111-111111111111',1,180);
+          INSERT INTO traffic_report_notifications(client,enable,daily,weekly,monthly)
+          VALUES('11111111-1111-1111-1111-111111111111',1,1,1,0);
+          INSERT INTO ping_tasks(weight,name,clients,all_clients,type,target,interval)
+          VALUES(5,'Fixture Ping','["11111111-1111-1111-1111-111111111111"]',0,'icmp','1.1.1.1',60);
+          INSERT OR REPLACE INTO configs(key,value) VALUES('custom_fixture','"preserve-me"');
+          SQL
+          sudo sqlite3 /opt/komari/data/metrics.db <<'SQL'
+          INSERT INTO metric_definitions(name,type,unit,description,retention_days,metadata,created_at_milli,updated_at_milli)
+          VALUES('fixture.metric','gauge','x','migration fixture',30,'{}',1789612200000,1789612200000);
+          INSERT INTO metric_series(metric_name,entity_id,tags_hash,tags)
+          VALUES('fixture.metric','11111111-1111-1111-1111-111111111111','fixture-series-hash','{}');
+          INSERT INTO metric_resolutions(resolution_milli) VALUES(60000);
+          INSERT INTO metric_label_sets(labels_hash,labels) VALUES('fixture-label-hash','{}');
+          INSERT INTO metric_rollups(series_id,resolution_id,label_id,bucket_milli,count,sum,sum_sq,min_val,max_val,first_val,first_ts_milli,last_val,last_ts_milli,digest,created_at_milli)
+          SELECT s.id,r.id,l.id,1789612200000,1,42.5,1806.25,42.5,42.5,42.5,1789612200000,42.5,1789612200000,NULL,1789612200000
+          FROM metric_series s,metric_resolutions r,metric_label_sets l
+          WHERE s.metric_name='fixture.metric' AND r.resolution_milli=60000 AND l.labels_hash='fixture-label-hash';
+          SQL
+          sudo mkdir -p /opt/komari/data/plugin/demo /opt/komari/data/plugin-data/demo /opt/komari/data/theme/custom
+          printf '%s' 'plugin-file' | sudo tee /opt/komari/data/plugin/demo/index.js >/dev/null
+          printf '%s' 'plugin-data-file' | sudo tee /opt/komari/data/plugin-data/demo/state.json >/dev/null
+          printf '%s' 'theme-file' | sudo tee /opt/komari/data/theme/custom/komari-theme.json >/dev/null
+
+          sudo sqlite3 /opt/komari/data/komari.db \
+            "SELECT username FROM users WHERE username='officialadmin';
+             SELECT uuid||'|'||token||'|'||name||'|'||version FROM clients WHERE token='token-preserve';
+             SELECT value FROM configs WHERE key='custom_fixture';
+             SELECT name||'|'||target||'|'||interval FROM ping_tasks WHERE name='Fixture Ping';
+             SELECT client||'|'||enable||'|'||grace_period FROM offline_notifications;
+             SELECT client||'|'||enable||'|'||daily||'|'||weekly||'|'||monthly FROM traffic_report_notifications;" \
+            > /tmp/main-fixture-before.txt
+          sudo sqlite3 /opt/komari/data/metrics.db \
+            "SELECT s.metric_name||'|'||r.count||'|'||r.sum||'|'||r.min_val||'|'||r.max_val
+             FROM metric_rollups r JOIN metric_series s ON s.id=r.series_id
+             WHERE s.metric_name='fixture.metric';" > /tmp/metric-fixture-before.txt
+          sudo sha256sum /opt/komari/data/plugin/demo/index.js \
+            /opt/komari/data/plugin-data/demo/state.json \
+            /opt/komari/data/theme/custom/komari-theme.json > /tmp/files-before.txt
+
+          echo "--- 重新启动旧服务；迁移调用前必须一直保持在线 ---"
+          sudo env PATH=/tmp/stubbin:$PATH systemctl start komari.service
+          curl -fsS http://127.0.0.1:25774/ping | grep -Fx pong
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.4.3"'
 
           echo "--- 记录迁移前的数据指纹 ---"
           sudo bash -c 'ls -la /opt/komari /opt/komari/data' > /tmp/ls-all.txt
@@ -176,16 +256,18 @@ jobs:
           done < /tmp/tables-before.txt
           cat /tmp/counts-before.txt
           sudo sha256sum /opt/komari/data/komari.db | tee /tmp/db-sha-before.txt
-          pkill -f "komari server -l 127.0.0.1:25774" || true
-          sleep 2
+          PATH=/tmp/stubbin:$PATH systemctl is-active --quiet komari.service
 
       - name: Migrate to Komari Stable (expect success)
         run: |
           set -euxo pipefail
           export PATH=/tmp/stubbin:$PATH
+          systemctl is-active --quiet komari.service
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.4.3"'
           sudo env PATH=/tmp/stubbin:$PATH \
             KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
             KOMARI_TARGET_VERSION=v1.5.0-stable.0 \
+            KOMARI_HEALTHCHECK_TIMEOUT=10 \
             bash install-komari.sh --migrate --yes 2>&1 | tee /tmp/migration.log
           echo "---- 迁移日志中的关键行 ----"
           grep -E "当前版本|目标版本|旧来源|目标来源|备份已创建|校验通过|迁移完成" /tmp/migration.log || true
@@ -215,6 +297,7 @@ jobs:
 
           echo "--- 5) 数据未丢失（表行数不减少，DB 完整性 ok）---"
           sudo sqlite3 /opt/komari/data/komari.db "PRAGMA integrity_check;"
+          sudo sqlite3 /opt/komari/data/metrics.db "PRAGMA integrity_check;"
           : > /tmp/counts-after.txt
           while read -r tbl; do
             n=$(sudo sqlite3 /opt/komari/data/komari.db "select count(*) from \"$tbl\";" 2>/dev/null || echo '?')
@@ -222,16 +305,43 @@ jobs:
           done < /tmp/tables-before.txt
           echo "迁移前:"; cat /tmp/counts-before.txt
           echo "迁移后:"; cat /tmp/counts-after.txt
-          if diff -u /tmp/counts-before.txt /tmp/counts-after.txt; then
-            echo "OK: 迁移前后行数完全一致"
-          else
-            echo "NOTE: 行数有差异，请确认没有减少（上方 diff 中 '-' 行代表减少）"
-            ! diff /tmp/counts-before.txt /tmp/counts-after.txt | grep -q '^< .*=[1-9]'
-          fi
+          diff -u /tmp/counts-before.txt /tmp/counts-after.txt || true
+          while IFS='=' read -r tbl before_count; do
+            after_count=$(awk -F= -v table="$tbl" '$1 == table {print $2}' /tmp/counts-after.txt)
+            [ -n "$after_count" ] && [ "$after_count" != "?" ]
+            if [ "$after_count" -lt "$before_count" ]; then
+              echo "FAIL: $tbl row count decreased: $before_count -> $after_count" >&2
+              exit 1
+            fi
+          done < /tmp/counts-before.txt
+          echo "OK: no existing table lost rows"
+          echo "--- 5b) 具体值、指标 rollup 和文件逐项相同 ---"
+          sudo sqlite3 /opt/komari/data/komari.db \
+            "SELECT username FROM users WHERE username='officialadmin';
+             SELECT uuid||'|'||token||'|'||name||'|'||version FROM clients WHERE token='token-preserve';
+             SELECT value FROM configs WHERE key='custom_fixture';
+             SELECT name||'|'||target||'|'||interval FROM ping_tasks WHERE name='Fixture Ping';
+             SELECT client||'|'||enable||'|'||grace_period FROM offline_notifications;
+             SELECT client||'|'||enable||'|'||daily||'|'||weekly||'|'||monthly FROM traffic_report_notifications;" \
+            > /tmp/main-fixture-after.txt
+          sudo sqlite3 /opt/komari/data/metrics.db \
+            "SELECT s.metric_name||'|'||r.count||'|'||r.sum||'|'||r.min_val||'|'||r.max_val
+             FROM metric_rollups r JOIN metric_series s ON s.id=r.series_id
+             WHERE s.metric_name='fixture.metric';" > /tmp/metric-fixture-after.txt
+          sudo sha256sum /opt/komari/data/plugin/demo/index.js \
+            /opt/komari/data/plugin-data/demo/state.json \
+            /opt/komari/data/theme/custom/komari-theme.json > /tmp/files-after.txt
+          diff -u /tmp/main-fixture-before.txt /tmp/main-fixture-after.txt
+          diff -u /tmp/metric-fixture-before.txt /tmp/metric-fixture-after.txt
+          diff -u /tmp/files-before.txt /tmp/files-after.txt
           echo "--- 6) 官方实例的数据文件仍在原处 ---"
           sudo ls -la /opt/komari/data > /tmp/ls-data2.txt; head -10 /tmp/ls-data2.txt
           echo "--- 7) --status 输出 ---"
           sudo env PATH=/tmp/stubbin:$PATH bash install-komari.sh --status
+          echo "--- 8) 迁移后必须是真实存活且 HTTP 版本正确 ---"
+          systemctl is-active --quiet komari.service
+          curl -fsS http://127.0.0.1:25774/ping | grep -Fx pong
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.5.0-stable.0"'
 
       - name: Verify rollback when the new binary fails to start
         run: |
@@ -242,6 +352,7 @@ jobs:
           sudo env PATH=/tmp/stubbin:$PATH \
             KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
             KOMARI_TARGET_VERSION=v1.5.0-stable.0-broken \
+            KOMARI_HEALTHCHECK_TIMEOUT=5 \
             bash install-komari.sh --migrate --yes > /tmp/rollback.log 2>&1
           rc=$?
           set -e
@@ -252,6 +363,10 @@ jobs:
           [ "$BEFORE" = "$AFTER" ] && echo "OK: 二进制已恢复为迁移前版本"
           tail -12 /tmp/rollback.log
           PATH=/tmp/stubbin:$PATH systemctl is-active komari.service && echo "OK: 服务仍在运行"
+          curl -fsS http://127.0.0.1:25774/ping | grep -Fx pong
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.5.0-stable.0"'
+          sudo sqlite3 /opt/komari/data/komari.db "PRAGMA integrity_check;" | grep -Fx ok
+          sudo sqlite3 /opt/komari/data/metrics.db "PRAGMA integrity_check;" | grep -Fx ok
 
       - name: Verify checksum mismatch aborts without touching anything
         run: |
@@ -270,6 +385,50 @@ jobs:
           grep -E "校验失败|checksum" /tmp/badsum.log || true
           AFTER=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
           [ "$BEFORE" = "$AFTER" ] && echo "OK: 校验失败时二进制未被替换"
+          PATH=/tmp/stubbin:$PATH systemctl is-active --quiet komari.service
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.5.0-stable.0"'
+
+      - name: Verify missing checksums fail closed before stopping the service
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+          BEFORE=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          set +e
+          sudo env PATH=/tmp/stubbin:$PATH \
+            KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
+            KOMARI_TARGET_VERSION=v1.5.0-stable.0-nocheck \
+            KOMARI_HEALTHCHECK_TIMEOUT=5 \
+            bash install-komari.sh --migrate --yes > /tmp/nocheck.log 2>&1
+          rc=$?
+          set -e
+          [ "$rc" -ne 0 ]
+          grep -q "未发布可信校验和\|No trusted checksum" /tmp/nocheck.log
+          AFTER=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          [ "$BEFORE" = "$AFTER" ]
+          systemctl is-active --quiet komari.service
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.5.0-stable.0"'
+
+      - name: Verify a healthy process with the wrong version is rolled back
+        run: |
+          set -euxo pipefail
+          export PATH=/tmp/stubbin:$PATH
+          BEFORE=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          set +e
+          sudo env PATH=/tmp/stubbin:$PATH \
+            KOMARI_RELEASE_BASE=http://127.0.0.1:8899 \
+            KOMARI_TARGET_VERSION=v1.5.0-stable.0-wrong-version \
+            KOMARI_HEALTHCHECK_TIMEOUT=5 \
+            bash install-komari.sh --migrate --yes > /tmp/wrong-version.log 2>&1
+          rc=$?
+          set -e
+          [ "$rc" -ne 0 ]
+          grep -q "未通过健康检查\|did not become healthy" /tmp/wrong-version.log
+          AFTER=$(sudo sha256sum /opt/komari/komari | awk '{print $1}')
+          [ "$BEFORE" = "$AFTER" ]
+          systemctl is-active --quiet komari.service
+          curl -fsS http://127.0.0.1:25774/ping | grep -Fx pong
+          curl -fsS http://127.0.0.1:25774/api/version | grep -q '"version":"1.5.0-stable.0"'
+          sudo sqlite3 /opt/komari/data/komari.db "PRAGMA integrity_check;" | grep -Fx ok
 
       - name: Summary
         if: always()

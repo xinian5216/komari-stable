@@ -12,7 +12,26 @@
 
 ---
 
-## 1.5.0-stable.2 — 候选（未发布）
+## Unreleased
+
+### Fixed / Security
+
+- **原地迁移改为可验证的离线事务**：目标二进制先在旧服务运行期间下载并强制校验本仓库发布的
+  `.sha256` / `SHA256SUMS`；通过磁盘空间门禁后才停止服务，离线打包并验证 `data/`，不再在线复制
+  SQLite/WAL。历史二进制备份不再在迁移前删除。
+- **启动成功判定升级**：不再仅等待三秒检查 systemd；现在轮询 systemd、`/ping` 和
+  `/api/version`，并核对目标版本。超时或版本不符时，同时恢复旧二进制与离线数据归档，失败版本的
+  data 会另存供取证。
+- **迁移文档与门禁校准**：Agent 最低安全建议统一为 1.5.0；AI Agent 索引修正真实 `configs`
+  表名并补齐 capability 三态、远控门禁和迁移风险。Web、Agent、Komari Next 三个配套仓库新增
+  各自的 `AGENTS.md`。
+
+### Compatibility
+
+- 不修改数据库 Schema、Agent v2 已有字段、HTTP API、配置格式或 Docker 部署方式。
+- 外置 MySQL/PostgreSQL 指标库仍需用户按数据库自身方式备份；Server 脚本只负责本机 `/opt/komari`。
+
+## 1.5.0-stable.2 — 已发布（2026-09-17）
 
 **基线**：同 `1.5.0-stable.0`（上游 `1.5.0-fix1` / `0ca87aa`），在 `1.5.0-stable.1` 之上增量。
 
@@ -145,9 +164,3 @@
 
 - 换回上游 `1.5.0-fix1` 二进制/镜像即可；本次改动不含数据库迁移，无需回滚数据。
 - 如已由新版本触发自动备份，可用 `data/backup/upgrade-*.zip` 恢复 `data/` 目录。
-
----
-
-## Unreleased
-
-（暂无。后续 `1.5.0-stable.N` 的候选改动会先记录在此处。）

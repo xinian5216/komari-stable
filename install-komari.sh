@@ -99,7 +99,8 @@ ACTION=""
 TARGET_VERSION="${KOMARI_TARGET_VERSION:-}"
 SOURCE_MARKER="$INSTALL_DIR/.komari-stable-source"
 DATA_MIGRATION_BACKUP_DIR="$INSTALL_DIR/backup"
-V2_MIN_AGENT="1.4.0"
+V2_MIN_AGENT="1.5.0"
+HEALTHCHECK_TIMEOUT="${KOMARI_HEALTHCHECK_TIMEOUT:-30}"
 
 # ==========================================================
 # 本地化文案
@@ -172,6 +173,42 @@ msg() {
         migrate_backup_failed)
             en_text='Could not create the data backup. Upgrade stopped, nothing was changed.'
             zh_text='无法创建数据备份，升级已中止，未做任何改动。'
+            ;;
+        migrate_backup_invalid)
+            en_text='The offline backup archive failed validation. The old service was restarted and the upgrade was cancelled.'
+            zh_text='离线备份归档校验失败，已重新启动旧服务并取消升级。'
+            ;;
+        migrate_disk_space_failed)
+            en_text='Insufficient free space for the offline backup, application backup and rollback workspace (required: %s KiB, available: %s KiB). Upgrade cancelled.'
+            zh_text='可用空间不足以容纳离线归档、应用升级备份和回滚工作副本（需要：%s KiB，可用：%s KiB），升级已取消。'
+            ;;
+        migrate_health_wait)
+            en_text='Waiting for the target service and HTTP API to become healthy...'
+            zh_text='等待目标服务与 HTTP API 完成健康检查...'
+            ;;
+        migrate_health_ok)
+            en_text='Health check passed: /ping and /api/version report %s.'
+            zh_text='健康检查通过：/ping 与 /api/version 已确认版本 %s。'
+            ;;
+        migrate_health_failed)
+            en_text='The target did not become healthy within %s seconds. Restoring the old binary and offline data backup...'
+            zh_text='目标版本在 %s 秒内未通过健康检查，正在恢复旧二进制和离线数据备份...'
+            ;;
+        migrate_data_rollback_failed)
+            en_text='Automatic data rollback failed. Preserved failed data: %s / offline backup: %s'
+            zh_text='自动数据回滚失败。失败版本数据保留于：%s / 离线备份：%s'
+            ;;
+        migrate_checksum_required)
+            en_text='No trusted checksum was published for this Komari Stable asset. Upgrade refused.'
+            zh_text='该 Komari Stable 资产未发布可信校验和，已拒绝升级。'
+            ;;
+        migrate_verification_failed)
+            en_text='The downloaded asset failed integrity verification. The running service was not changed.'
+            zh_text='下载资产未通过完整性校验，当前运行服务未被修改。'
+            ;;
+        service_stop_failed)
+            en_text='Failed to stop %s cleanly. Upgrade cancelled before touching data or the installed binary.'
+            zh_text='无法正常停止 %s，升级已在修改数据和已安装二进制之前取消。'
             ;;
         migrate_rollback_start)
             en_text='The new binary did not start the service. Rolling back...'
@@ -1474,42 +1511,129 @@ confirm_migration() {
     ui_yesno "$(msg migrate_notice_title)" "$(msg migrate_confirm)"
 }
 
-# 完整数据备份：data/ 内含主库、metrics 库、配置、插件、plugin-data 与主题；
-# 只排除二进制自身与其备份。成功时把归档路径写入 DATA_BACKUP_ARCHIVE。
+# 离线数据备份：调用方必须已经停止服务。data/ 内含主库、默认 metrics 库、配置、插件、
+# plugin-data 与主题；历史备份目录不重复套娃。先写临时文件、验证归档和主库条目，再原子落位。
 DATA_BACKUP_ARCHIVE=""
 create_data_backup() {
     local stamp="$1"
     local archive="$DATA_MIGRATION_BACKUP_DIR/komari-migrate-${stamp}.tar.gz"
+    local staged="${archive}.tmp.$$"
     DATA_BACKUP_ARCHIVE=""
     mkdir -p "$DATA_MIGRATION_BACKUP_DIR" || return 1
-    if ! tar -czf "$archive" -C "$INSTALL_DIR" \
-        --exclude=./komari --exclude='./komari.backup.*' --exclude=./backup . 2>/dev/null; then
-        rm -f "$archive"
+    rm -f "$staged"
+    if ! tar -czf "$staged" -C "$INSTALL_DIR" \
+        --exclude=./data/backup ./data 2>/dev/null; then
+        rm -f "$staged"
         return 1
     fi
-    if [ ! -s "$archive" ]; then
-        rm -f "$archive"
+    if [ ! -s "$staged" ] || ! tar -tzf "$staged" >/dev/null 2>&1; then
+        rm -f "$staged"
+        return 1
+    fi
+    if [ -f "$INSTALL_DIR/data/komari.db" ] && \
+       ! tar -tzf "$staged" 2>/dev/null | grep -Fxq './data/komari.db'; then
+        rm -f "$staged"
+        return 1
+    fi
+    if ! mv -f "$staged" "$archive"; then
+        rm -f "$staged"
         return 1
     fi
     DATA_BACKUP_ARCHIVE="$archive"
     return 0
 }
 
-# 校验：发布方提供 <二进制>.sha256 时强制校验，缺失则跳过（并在日志中说明）。
+# 迁移会同时保留脚本离线归档、目标程序创建的 upgrade ZIP，并在回滚时保留失败 data
+# 再解压旧 data。以三份未压缩 data 大小 + 当前二进制 + 64 MiB 余量做保守门禁。
+MIGRATION_REQUIRED_KB=0
+MIGRATION_AVAILABLE_KB=0
+check_migration_disk_space() {
+    local data_kb binary_kb available_kb required_kb
+    data_kb=$(du -sk --exclude=backup "$INSTALL_DIR/data" 2>/dev/null | awk '{print $1}')
+    if [ -z "$data_kb" ]; then
+        data_kb=$(du -sk "$INSTALL_DIR/data" 2>/dev/null | awk '{print $1}')
+    fi
+    binary_kb=$(du -k "$BINARY_PATH" 2>/dev/null | awk '{print $1}')
+    available_kb=$(df -Pk "$INSTALL_DIR" 2>/dev/null | awk 'NR == 2 {print $4}')
+    data_kb=${data_kb:-0}
+    binary_kb=${binary_kb:-0}
+    available_kb=${available_kb:-0}
+    required_kb=$((data_kb * 3 + binary_kb + 65536))
+    MIGRATION_REQUIRED_KB="$required_kb"
+    MIGRATION_AVAILABLE_KB="$available_kb"
+    if [ "$available_kb" -lt "$required_kb" ]; then
+        log_error "$(msg migrate_disk_space_failed "$required_kb" "$available_kb")"
+        return 1
+    fi
+    return 0
+}
+
+# 正常运行的服务必须同时满足 systemd active、/ping=pong、/api/version=目标版本。
+wait_for_target_health() {
+    local expected="${1#v}" port deadline body version
+    port=$(installed_listen_port)
+    deadline=$((SECONDS + HEALTHCHECK_TIMEOUT))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+            body=$(curl -fsS -m 3 "http://127.0.0.1:${port}/ping" 2>/dev/null || true)
+            version=$(curl -fsS -m 3 "http://127.0.0.1:${port}/api/version" 2>/dev/null \
+                | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+            if [ "$body" = "pong" ] && [ -n "$version" ] && \
+               { [ -z "$expected" ] || [ "$expected" = "latest" ] || [ "$version" = "$expected" ]; }; then
+                HEALTHY_VERSION="$version"
+                return 0
+            fi
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+# 健康检查失败时，保留失败版本的 data 供取证，再从停机归档恢复原 data。
+restore_data_backup() {
+    local archive="$1" stamp="$2"
+    local failed_data="${INSTALL_DIR}/data.failed.${stamp}"
+    if [ -e "$failed_data" ]; then
+        failed_data="${failed_data}.$$"
+    fi
+    FAILED_DATA_DIR="$failed_data"
+    [ -f "$archive" ] || return 1
+    if [ -d "$INSTALL_DIR/data" ]; then
+        mv "$INSTALL_DIR/data" "$failed_data" || return 1
+    fi
+    if tar -xzf "$archive" -C "$INSTALL_DIR" ./data; then
+        return 0
+    fi
+    rm -rf -- "$INSTALL_DIR/data"
+    if [ -d "$failed_data" ]; then
+        mv "$failed_data" "$INSTALL_DIR/data" 2>/dev/null || true
+    fi
+    return 1
+}
+
+# 校验：官方稳定版必须取得可信校验值；Lite 仓库缺失校验文件时兼容放行。
 verify_download() {
     local url="$1" file="$2" asset="$3" expected actual sums_url
     if ! command -v sha256sum >/dev/null 2>&1; then
+        if [ "$REPO" = "$STANDARD_REPO" ]; then
+            log_error "$(msg migrate_checksum_required)"
+            return 1
+        fi
         log_info "$(msg migrate_checksum_missing)"
         return 0
     fi
     # 优先取同名 .sha256；没有则回退到同一 release 目录下的 SHA256SUMS
-    expected=$(curl -fsSL -m 20 "${url}.sha256" 2>/dev/null | awk '{print $1}' | head -1)
+    expected=$(curl -fsSL -m 20 "${url}.sha256" 2>/dev/null | awk '{print $1}' | head -1) || expected=""
     if [ -z "$expected" ] && [ -n "$asset" ]; then
         sums_url="$(dirname "$url")/SHA256SUMS"
         expected=$(curl -fsSL -m 20 "$sums_url" 2>/dev/null \
-            | awk -v n="$asset" '$2 == n || $2 == "*" n {print $1}' | head -1)
+            | awk -v n="$asset" '$2 == n || $2 == "*" n {print $1}' | head -1) || expected=""
     fi
     if [ -z "$expected" ]; then
+        if [ "$REPO" = "$STANDARD_REPO" ]; then
+            log_error "$(msg migrate_checksum_required)"
+            return 1
+        fi
         log_info "$(msg migrate_checksum_missing)"
         return 0
     fi
@@ -1548,86 +1672,110 @@ upgrade_komari() {
         return 0
     fi
 
-    # 1) 完整数据备份（失败即中止，未改动任何东西）
-    local stamp
+    # 1) 先做磁盘门禁、下载与校验；这些步骤不停止当前服务。
+    if ! check_migration_disk_space; then
+        ui_msgbox "$(msg title_error)" "$(msg migrate_disk_space_failed "$MIGRATION_REQUIRED_KB" "$MIGRATION_AVAILABLE_KB")"
+        return 1
+    fi
+
+    local stamp target_label health_expected arch download_url staged backup_path
     stamp=$(date +%Y%m%d_%H%M%S)
-    log_step "$(msg migrate_backup_start)"
-    if ! create_data_backup "$stamp"; then
-        ui_msgbox "$(msg title_error)" "$(msg migrate_backup_failed)"
-        return 1
+    target_label=$(target_version_label)
+    health_expected="$target_label"
+    if [ "$CHANNEL" = "snapshot" ]; then
+        health_expected=""
     fi
-    log_success "$(msg migrate_backup_done "$DATA_BACKUP_ARCHIVE")"
-
-    log_step "$(msg stopping_service)"
-    systemctl stop ${SERVICE_NAME}.service
-
-    # 2) 二进制备份
-    log_step "$(msg clearing_backups)"
-    rm -f -- "${BINARY_PATH}.backup."*
-
-    local backup_path="${BINARY_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
-    progress_add "$(msg progress_backup)"
-    log_step "$(msg backing_up)"
-    if ! cp "$BINARY_PATH" "$backup_path"; then
-        log_error "$(msg backup_failed_log)"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "$(msg title_error)" "$(msg backup_failed)"
-        return 1
-    fi
-
-    local arch=$(detect_arch)
-    local download_url=$(get_download_url "$arch")
+    arch=$(detect_arch)
+    download_url=$(get_download_url "$arch")
     if [ $? -ne 0 ]; then
         log_error "$(msg download_url_failed_log)"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "$(msg title_error)" "$(msg download_url_failed_restore)"
+        ui_msgbox "$(msg title_error)" "$(msg download_url_failed)"
         return 1
     fi
 
-    # 3) 下载到暂存文件，校验通过后再落位
     progress_add "$(msg progress_download)"
     log_step "$(msg downloading_latest "$EDITION_NAME")"
-    local staged="${BINARY_PATH}.new.${stamp}"
+    staged="${BINARY_PATH}.new.${stamp}"
     rm -f "$staged"
     if ! download_file "$download_url" "$staged" "$EDITION_NAME"; then
         rm -f "$staged"
         log_error "$(msg download_failed_log)"
-        mv "$backup_path" "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
-        ui_msgbox "$(msg title_error)" "$(msg download_failed_restore)"
+        ui_msgbox "$(msg title_error)" "$(msg download_failed)"
         return 1
     fi
 
     if ! verify_download "$download_url" "$staged" "komari-linux-${arch}"; then
         rm -f "$staged"
-        mv "$backup_path" "$BINARY_PATH"
-        systemctl start ${SERVICE_NAME}.service
+        ui_msgbox "$(msg title_error)" "$(msg migrate_verification_failed)"
+        return 1
+    fi
+    chmod +x "$staged"
+
+    # 2) 下载已验证后才停机，停机状态下创建一致的数据归档。
+    log_step "$(msg stopping_service)"
+    if ! systemctl stop "${SERVICE_NAME}.service"; then
+        rm -f "$staged"
+        systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+        ui_msgbox "$(msg title_error)" "$(msg service_stop_failed "$SERVICE_NAME")"
+        return 1
+    fi
+    if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+        rm -f "$staged"
+        systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+        ui_msgbox "$(msg title_error)" "$(msg service_stop_failed "$SERVICE_NAME")"
+        return 1
+    fi
+
+    log_step "$(msg migrate_backup_start)"
+    if ! create_data_backup "$stamp"; then
+        rm -f "$staged"
+        systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+        ui_msgbox "$(msg title_error)" "$(msg migrate_backup_invalid)"
+        return 1
+    fi
+    log_success "$(msg migrate_backup_done "$DATA_BACKUP_ARCHIVE")"
+
+    # 3) 保留历史备份；本次旧二进制使用唯一时间戳另存，不在成功前清理任何恢复点。
+    backup_path="${BINARY_PATH}.backup.${stamp}"
+    progress_add "$(msg progress_backup)"
+    log_step "$(msg backing_up)"
+    if ! cp "$BINARY_PATH" "$backup_path"; then
+        rm -f "$staged"
+        log_error "$(msg backup_failed_log)"
+        systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+        ui_msgbox "$(msg title_error)" "$(msg backup_failed)"
+        return 1
+    fi
+
+    if ! mv -f "$staged" "$BINARY_PATH"; then
+        systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
         ui_msgbox "$(msg title_error)" "$(msg download_failed_restore)"
         return 1
     fi
 
-    chmod +x "$staged"
-    mv -f "$staged" "$BINARY_PATH"
-
-    # 4) 启动；启动失败则回滚旧二进制
+    # 4) 不能只看进程存活：目标版本必须通过 systemd、/ping 与 /api/version 三重检查。
     progress_add "$(msg progress_restart)"
     log_step "$(msg restart_start)"
-    systemctl start ${SERVICE_NAME}.service
-    sleep 3
-
-    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
-        write_source_marker "$(target_version_label)"
+    systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+    log_info "$(msg migrate_health_wait)"
+    if wait_for_target_health "$health_expected"; then
+        write_source_marker "$target_label"
+        log_success "$(msg migrate_health_ok "$HEALTHY_VERSION")"
         progress_add "$(msg progress_complete)"
-        ui_msgbox "$(msg title_upgrade_complete)" "$(msg migrate_done "$SERVICE_NAME" "$(detect_installed_version)")"
+        ui_msgbox "$(msg title_upgrade_complete)" "$(msg migrate_done "$SERVICE_NAME" "$HEALTHY_VERSION")"
         return 0
     fi
 
-    log_error "$(msg migrate_rollback_start)"
-    systemctl stop ${SERVICE_NAME}.service >/dev/null 2>&1
-    cp "$backup_path" "$BINARY_PATH" 2>/dev/null
-    systemctl start ${SERVICE_NAME}.service
-    sleep 3
-    if systemctl is-active --quiet ${SERVICE_NAME}.service; then
+    log_error "$(msg migrate_health_failed "$HEALTHCHECK_TIMEOUT")"
+    systemctl stop "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+    cp "$backup_path" "$BINARY_PATH" 2>/dev/null || true
+    FAILED_DATA_DIR=""
+    if ! restore_data_backup "$DATA_BACKUP_ARCHIVE" "$stamp"; then
+        ui_msgbox "$(msg title_error)" "$(msg migrate_data_rollback_failed "${FAILED_DATA_DIR:-unknown}" "$DATA_BACKUP_ARCHIVE")"
+        return 1
+    fi
+    systemctl start "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
+    if wait_for_target_health ""; then
         ui_msgbox "$(msg title_error)" "$(msg migrate_rollback_done)"
         return 1
     fi
@@ -1843,6 +1991,11 @@ print_status_report() {
     printf '  binary : %s\n' "$BINARY_PATH"
     printf '  data   : %s/data\n' "$DATA_DIR"
 }
+
+# 被 shell 测试 source 时只加载函数，不执行安装器入口。
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    return 0
+fi
 
 # Main execution
 parse_args "$@"

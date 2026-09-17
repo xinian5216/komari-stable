@@ -71,13 +71,13 @@ docker run -d --name komari \
   -p 25774:25774 \
   -v komari-data:/app/data \
   --restart unless-stopped \
-  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
 ```
 
 - `-p 25774:25774`：面板端口（镜像内 `KOMARI_LISTEN=0.0.0.0:25774`）。
 - `-v ...:/app/data`：**必须挂载**，主库、metrics 库、配置、插件与主题都在这里；镜像本身未声明 VOLUME。
 - `--restart unless-stopped`：随主机重启自动恢复。
-- 强调可复现性的生产环境，建议固定到 `v1.5.0-stable.0` 这类**不可变版本 tag**，而不是 `stable` 浮动 tag。
+- 强调可复现性的生产环境，建议固定到 `v1.5.0-stable.2` 这类**不可变版本 tag**，而不是 `stable` 浮动 tag。
 
 #### 3. Docker Compose
 
@@ -123,10 +123,10 @@ docker rename <旧容器名> komari-old-$(date +%F)
 # 3) 用原挂载创建新的 komari 容器（此时名称已空闲，不会 name conflict）
 #    named volume：
 docker run -d --name komari -p 25774:25774 -v <卷名>:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
 #    bind mount（宿主目录与旧容器保持一致）：
 docker run -d --name komari -p 25774:25774 -v <宿主机目录>:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
 
 # 4) 验证新实例：面板可登录、节点在线、历史数据完整
 # 5) 验证成功后再由你决定是否删除旧容器/旧镜像；本流程不自动删除任何容器或数据卷
@@ -147,11 +147,16 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 迁移过程会：
 
 - 显示**当前版本 / 目标版本 / 旧来源 / 目标来源**并向你确认；
-- 升级前把整个 `data/`（主库 `komari.db`、`metrics.db`、配置、用户、节点、插件与 `plugin-data`、主题）打包为
-  `/opt/komari/backup/komari-migrate-<时间戳>.tar.gz`（失败即中止，不改动任何东西）；
+- 在旧服务仍运行时先下载目标二进制并强制验证 `.sha256` / `SHA256SUMS`；校验缺失或不匹配即中止；
+- 预留离线归档、应用升级备份及失败回滚工作副本所需空间后停止服务，把 `data/`（主库 `komari.db`、默认 `metrics.db`、配置、用户、
+  节点、插件、`plugin-data`、主题）离线打包为 `/opt/komari/backup/komari-migrate-<时间戳>.tar.gz`，
+  并验证归档可读且包含主库；历史 `data/backup` 不重复套入归档；
 - 备份旧二进制为 `/opt/komari/komari.backup.<时间戳>`；
-- 下载新二进制到暂存文件，**校验 `.sha256`**（发布方提供时强制校验）后再落位；
-- 启动失败时**自动回滚**旧二进制。
+- 只有 systemd、`/ping` 与 `/api/version` 均在超时前确认目标版本才判定成功；
+- 启动失败、API 不健康或版本不符时，同时恢复旧二进制和离线 `data/`，并保留失败数据供排查。
+
+> 默认 SQLite 指标库包含在本地归档中；如果你把指标库放在外置 MySQL/PostgreSQL，必须另行使用数据库
+> 自身工具备份。脚本不会把远程数据库内容复制进 `/opt/komari`。
 
 > **推荐顺序（重要）**：① 先接管 Agent（见 §6），逐个确认 `Github Repo:` 已变为
 > `xinian5216/komari-agent-stable` 且节点以 v2 在线；② 再原地迁移 Server。
@@ -161,7 +166,7 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 > ⚠️ **升级前请确认 Agent 兼容性**：服务端 1.5.0 起只接受 **v2 协议**。Agent 的 v2 支持自
 > **1.2.10** 引入（当时可选），**1.5.0 起 v2 成为唯一协议**。因此迁移前请确保每个节点的 Agent
 > **不低于 1.5.0**；如果个别节点仍在 1.2.10–1.4.x，需先确认它实际以 v2 上报，否则升级后无法上报。
-> 最稳妥的做法：先把所有 Agent 升级到 **v1.5.10-stable.0**（本 fork），再升级面板。
+> 最稳妥的做法：先把所有 Agent 升级到 **v1.5.10-stable.1**（本 fork），再升级面板。
 > 逐个确认方式：面板 nodes 页，或 `journalctl -u komari-agent | grep -i "protocol\|version"`。
 
 #### 5. 全新安装 Agent
@@ -213,7 +218,7 @@ sudo systemctl stop komari
 sudo cp /opt/komari/komari.backup.<时间戳> /opt/komari/komari
 sudo systemctl start komari
 # 如需回到指定版本（例如重装某个固定版本）：
-sudo bash /tmp/install-komari.sh --migrate --yes --target-version v1.5.0-stable.0
+sudo bash /tmp/install-komari.sh --migrate --yes --target-version v1.5.0-stable.2
 
 # Server（Docker）：把 image tag 改回旧固定版本，用原挂载重建容器
 # （compose：修改 compose.yaml 的 image tag 后 docker compose up -d；
@@ -311,7 +316,7 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 docker run -d --name komari -p 25774:25774 -v komari-data:/app/data \
   --restart unless-stopped ghcr.io/xinian5216/komari-stable:stable
 # pin a release tag for reproducible production deployments:
-#   ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+#   ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
 # compose: see compose.yaml; update with `docker compose pull && docker compose up -d`;
 # roll back by switching the image tag back and recreating the container (same data volume).
 ```
@@ -323,7 +328,7 @@ then migrate the panel.
 Note: server 1.5.0 and later speak only the v2 protocol. Agent-side v2 support landed in
 **1.2.10** (opt-in) and became the only protocol in agent **1.5.0**, so make sure every node runs
 agent **1.5.0 or newer** before migrating the panel - safest is to move the agents to
-**v1.5.10-stable.0** first.
+**v1.5.10-stable.1** first.
 
 ## Upstream & Credits / 上游与致谢
 
