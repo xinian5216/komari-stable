@@ -150,14 +150,17 @@ jobs:
           PY
 
           echo "--- private site toggle ---"
-          curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' \
-            -H "Cookie: session_token=$(cat /tmp/session.txt)" \
-            -d '{"jsonrpc":"2.0","id":2,"method":"admin:editSettings","params":{"private_site":true}}' -o /tmp/edit.json
+          rpc_call() { curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' \
+            -H "Cookie: session_token=$(cat /tmp/session.txt)" -d "$1"; }
+          rpc_call '{"jsonrpc":"2.0","id":2,"method":"admin:editSettings","params":{"private_site":true}}' > /tmp/edit.json
+          rpc_call '{"jsonrpc":"2.0","id":3,"method":"admin:getSettings","params":{}}' > /tmp/settings-after.json
           python3 - <<'PY'
           import json
-          payload = json.load(open("/tmp/edit.json"))
-          assert "result" in payload, payload
-          print("OK: private_site enabled")
+          edited = json.load(open("/tmp/edit.json"))
+          assert "error" not in edited, edited
+          settings = json.load(open("/tmp/settings-after.json"))["result"]
+          assert settings.get("private_site") is True, settings.get("private_site")
+          print("OK: private_site enabled and read back")
           PY
           code=$(curl -s -o /tmp/nodes-private.json -w '%{http_code}' "http://127.0.0.1:${PORT}/api/nodes")
           echo "anonymous /api/nodes with private site -> http=${code}"
@@ -169,10 +172,15 @@ jobs:
               raise SystemExit(f"FAIL: private site must hide nodes from anonymous callers, got {str(data)[:120]}")
           print("OK: private site hides nodes from anonymous callers")
           PY
-          curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' \
-            -H "Cookie: session_token=$(cat /tmp/session.txt)" \
-            -d '{"jsonrpc":"2.0","id":3,"method":"admin:editSettings","params":{"private_site":false}}' -o /dev/null
-          echo "OK: private site restored"
+          rpc_call '{"jsonrpc":"2.0","id":4,"method":"admin:editSettings","params":{"private_site":false}}' > /tmp/edit2.json
+          rpc_call '{"jsonrpc":"2.0","id":5,"method":"admin:getSettings","params":{}}' > /tmp/settings-restored.json
+          python3 - <<'PY'
+          import json
+          assert "error" not in json.load(open("/tmp/edit2.json"))
+          settings = json.load(open("/tmp/settings-restored.json"))["result"]
+          assert settings.get("private_site") is False, settings.get("private_site")
+          print("OK: private site restored")
+          PY
 
       - name: Server log tail
         if: always()
@@ -185,11 +193,11 @@ jobs:
       matrix:
         include:
           - case: hash-mismatch
-            prepare: "python3 scripts/prepare-assets.py theme --force --theme-zip /tmp/fixtures/valid.zip --theme-sha256 0000000000000000000000000000000000000000000000000000000000000000"
+            tamper: hash-mismatch
           - case: invalid-zip
-            prepare: "python3 scripts/prepare-assets.py theme --force --theme-zip /tmp/fixtures/garbage.bin"
+            tamper: invalid-zip
           - case: bad-manifest
-            prepare: "python3 scripts/prepare-assets.py theme --force --theme-zip /tmp/fixtures/bad-manifest.zip"
+            tamper: bad-manifest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -203,26 +211,42 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq zstd sqlite3
 
-      - name: Build the embedded frontend (valid) and tampered-bundle fixtures
+      - name: Prepare the real, lock-verified assets
         run: |
           set -euxo pipefail
-          python3 scripts/prepare-assets.py frontend
-          mkdir -p /tmp/fixtures
-          python3 - <<'PY'
-          import io, json, pathlib, urllib.request, zipfile
-          lock = json.load(open("bundled-themes.lock.json", encoding="utf-8"))["assets"]["bundled_preferred_theme"]
-          pathlib.Path("/tmp/fixtures/valid.zip").write_bytes(urllib.request.urlopen(lock["asset_url"], timeout=120).read())
-          pathlib.Path("/tmp/fixtures/garbage.bin").write_bytes(b"this is not a zip archive at all")
-          buffer = io.BytesIO()
-          with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-              archive.writestr("komari-theme.json", json.dumps({"name": "Broken", "short": "next", "author": "x", "url": "https://example.invalid"}))
-              archive.writestr("dist/index.html", "<html>broken</html>")
-          pathlib.Path("/tmp/fixtures/bad-manifest.zip").write_bytes(buffer.getvalue())
-          print("fixtures ready")
-          PY
+          python3 scripts/prepare-assets.py all
 
-      - name: Prepare assets for case ${{ matrix.case }}
-        run: ${{ matrix.prepare }}
+      - name: Tamper the bundled bundle (${{ matrix.case }})
+        run: |
+          set -euxo pipefail
+          python3 - "${{ matrix.tamper }}" <<'PY'
+          import hashlib, io, json, pathlib, sys, zipfile
+
+          case = sys.argv[1]
+          bundle = pathlib.Path("web/public/bundledTheme")
+          provenance = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
+
+          if case == "hash-mismatch":
+              # 主题包本身是真实、合法的，只有随包记录的哈希对不上 -> 必须拒绝 seed
+              provenance["sha256"] = "0" * 64
+          elif case == "invalid-zip":
+              # 哈希与内容自洽，但文件根本不是 zip -> 必须拒绝 seed
+              (bundle / "next.zip").write_bytes(b"this is not a zip archive at all")
+              provenance["sha256"] = hashlib.sha256((bundle / "next.zip").read_bytes()).hexdigest()
+          elif case == "bad-manifest":
+              # 合法 zip、哈希自洽，但 komari-theme.json 缺必填字段 -> 必须拒绝 seed
+              buffer = io.BytesIO()
+              with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+                  archive.writestr("komari-theme.json", json.dumps({"name": "Broken", "short": "next", "author": "x", "url": "https://example.invalid"}))
+                  archive.writestr("dist/index.html", "<html>broken</html>")
+              (bundle / "next.zip").write_bytes(buffer.getvalue())
+              provenance["sha256"] = hashlib.sha256((bundle / "next.zip").read_bytes()).hexdigest()
+          else:
+              raise SystemExit(f"unknown tamper case {case}")
+
+          (bundle / "provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(f"tampered bundle for case {case}: sha256={provenance['sha256'][:16]}...")
+          PY
 
       - name: Build the server
         run: |
@@ -245,7 +269,10 @@ jobs:
 
           value=$(sqlite3 data/komari.db "select value from configs where key='theme';")
           echo "configs.theme='${value}'"
-          [ -z "$value" ] || { echo "FAIL: theme must stay unset when the seed fails"; exit 1; }
+          case "$value" in
+            ""|'"default"') echo "OK: theme kept the default when the seed failed";;
+            *) echo "FAIL: a failed seed must not change the theme setting (got ${value})"; exit 1;;
+          esac
 
           [ ! -e data/theme/next ] || { echo "FAIL: a failed seed must not leave data/theme/next"; exit 1; }
           if find data/theme -maxdepth 1 -name '.tmp-themebundle-*' -print -quit | grep -q .; then
@@ -275,6 +302,9 @@ jobs:
           - case: theme-custom
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 升级对照需要 v1.5.0-stable.0 这个 tag 的完整历史
+
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
