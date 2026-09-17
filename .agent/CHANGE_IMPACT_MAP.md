@@ -32,7 +32,7 @@ Telemetry（上报数据 → 指标写入）
    ↓
 默认值变化 = 用户可见行为变化
    ↓
-config_items 表数据 / 前端 /api/public 输出
+configs 键值表数据 / 前端 /api/public 输出
    ↓
 CHANGELOG 的 Compatibility 段
 
@@ -63,6 +63,7 @@ CHANGELOG 的 Compatibility 段
 | `internal/migrations/*` | 旧库升级演练、版本标记、`CHANGELOG` Compatibility/Rollback |
 | `pkg/metric/*` | 指标迁移、维护作业、查询接口、大库性能、回滚可行性 |
 | `protocol/v2/*` | Agent 兼容、`web/api/client/*`、文档 `AGENT_PROTOCOL.md`、`komari-protocol` 对照 |
+| Agent capability / 远控门禁 | `agent_runtime` 内存态、`admin:getNodes`、任务下发、终端/文件 RPC、`komari-web-stable` 三态 UI |
 | `web/router/router.go` | API.md、权限矩阵（RequireRole）、前端调用点 |
 | `web/rpc/jsonrpc/*` | RPC2 方法名（冻结）、`rpc.methods` 输出、前端调用、插件 `server.call` 可用范围 |
 | `web/api/terminal/*` | 会话所有权校验、Origin 校验、2FA 流程、Agent 侧 `agent.terminal.request` |

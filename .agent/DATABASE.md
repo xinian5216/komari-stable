@@ -23,14 +23,15 @@ DSN 细节：主库 DSN 由 `dbcore.buildSQLiteDSN()` 组装（`_busy_timeout`�
   `Clipboard`、`LoadNotification`、`OfflineNotification`、`OidcProvider`、`MessageSenderProvider`…）
 - 建表/字段演进：`database/dbcore/dbcore.go` → `doInitialize()` 的 `AutoMigrate(...)` 列表
   （GORM 只加不删：**不删列、不删表**）
-- 配置项：`internal/config/settings.go` 定义，数据存 `config_items` 表（键值对）
+- 配置项：`internal/config/settings.go` 定义，数据存 `configs` 表（当前为 `key/value` 键值结构；
+  `ConfigItem.TableName()` 明确返回 `configs`）
 
 ## 3. 迁移机制（三层）
 
 | 层 | 位置 | 说明 |
 | --- | --- | --- |
 | ① GORM AutoMigrate | `database/dbcore/dbcore.go` | 启动时补列/建表 |
-| ② 一次性历史迁移 | `internal/migrations/*` | 处理 0.x/1.0.x/1.1.x → 现结构（时间戳 UTC 化、`configs`→`config_items`、旧 ping 任务展开等）；`migrations.go:Run()` 是总入口 |
+| ② 一次性历史迁移 | `internal/migrations/*` | 处理 0.x/1.0.x/1.1.x → 现结构（时间戳 UTC 化、`configs` 从旧单行模型重建为同名 `key/value` 表、旧 ping 任务展开等）；`migrations.go:Run()` 是总入口 |
 | ③ 指标库迁移 | `pkg/metric/migrations.go`、`internal/metricstore/store_migration.go` | 指标表结构、rollup/digest 结构升级；另有跨库搬迁（`migration_store.go` + `web/migration`） |
 
 ## 4. 升级 / 备份 / 回滚（现有安全网，勿破坏）
@@ -48,7 +49,7 @@ DSN 细节：主库 DSN 由 `dbcore.buildSQLiteDSN()` 组装（`_busy_timeout`�
 | --- | --- |
 | `clients`（节点） | 含 `token`（Agent 凭据）；字段变化影响鉴权与上报 |
 | `users` / `sessions` | 账号、密码哈希、2FA 密钥、会话有效性 |
-| `config_items` | 站点全部配置（含 API Key、AutoDiscovery Key、通知密钥） |
+| `configs`（键值表） | 站点全部配置（含 API Key、AutoDiscovery Key、通知密钥） |
 | 指标库 `series/labels/resolutions/rollups/raw_points` | 体量大、参与聚合与摘要回收；错误迁移会污染历史 |
 | 旧记录表（`records`/`ping_records`/`gpu_records`） | 仅作为旧库导入 DTO 保留（见 `internal/metricstore/legacy_records.go`） |
 

@@ -34,7 +34,7 @@
 - 代码发生**模块新增/删除、目录变化、协议变化、数据库变化、核心入口变化**时，必须同步检查本目录
   并按需更新（见 `MAINTENANCE_RULES.md` §索引维护）。
 - CI 会做轻量一致性检查（`.github/workflows/stable-ci.yml` 的 `agent-index` 作业 +
-  `scripts/check_agent_index.py`）：只校验"索引文件存在"与"PROJECT_MAP 提到的一级目录存在"，
-  不做语义检查，避免误报。
+  `scripts/check_agent_index.py`）：校验索引文件、PROJECT_MAP 一级路径，以及少量来自源码的关键事实
+  （当前配置表名、Agent capability 文档和迁移最低版本）；它不能代替人工语义复核。
 - 本目录文件**只记录位置 / 职责 / 依赖 / 入口 / 风险 / 阅读路径**；
   不要复制大段源码、函数实现或教程。

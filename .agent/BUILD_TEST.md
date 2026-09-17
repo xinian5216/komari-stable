@@ -89,3 +89,17 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 | 密钥扫描 | `gitleaks` | `secret-scan.yml` |
 | 索引一致性 | `python scripts/check_agent_index.py` | `stable-ci.yml` 的 `agent-index` 作业 |
 | 发布（二进制 + Docker） | 第 2/5 节 | `stable-release.yml`（release published 触发） |
+
+## 7. 原地迁移 E2E（官方 1.4.3 → Stable）
+
+`.github/workflows/migration-test.yml` 必须用官方真实 `1.4.3` 二进制建立数据夹具，并验证：
+
+1. 旧服务保持运行直到目标资产下载与校验结束；随后停机做离线归档；
+2. 主库和指标库 `PRAGMA integrity_check`，以及用户、节点/token、配置、通知、Ping、插件、主题和
+   指标 rollup 的具体值迁移前后相同（允许升级日志、版本标记等预期新增）；
+3. 迁移后真实请求 `/ping` 与 `/api/version`，不能用伪造 active 标记代替服务健康；
+4. 缺失校验和、错误校验和、目标进程秒退、API 不健康、版本不符、空间不足均 fail closed；
+5. 回滚同时恢复二进制与离线 data，旧 1.4.3 能再次启动并读到原数据。
+
+安装脚本、备份/版本逻辑或迁移 workflow 发生变化时必须运行该 E2E；发布固定资产仍由
+`stable-release.yml` 的不可变守卫负责，绝不覆盖既有 tag。

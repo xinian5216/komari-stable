@@ -6,8 +6,10 @@
 | 区域 | 等级 | 位置 | 风险点 | 进入时的要求 |
 | --- | --- | --- | --- | --- |
 | 数据库 Schema / 迁移 | 🔴 | `database/dbcore/dbcore.go`、`internal/migrations/*`、`pkg/metric/migrations.go`、`internal/metricstore/store_migration.go` | 升级失败或数据损坏；AutoMigrate 行为变化；旧库兼容 | **必须先报告并获得确认**；用真实旧库副本做升级+回滚演练 |
-| 指标存储引擎 | 🔴 | `pkg/metric/*`（30k 行） | 聚合/摘要/回收逻辑错误 → 历史数据错误或丢失；大库性能 | 改动要带回归测试；避免触碰 rollup/digest 语义 |
+| 指标存储引擎 | 🔴 | `pkg/metric/*`（仓库最大模块） | 聚合/摘要/回收逻辑错误 → 历史数据错误或丢失；大库性能 | 改动要带回归测试；避免触碰 rollup/digest 语义 |
 | Agent 协议 / 上报 | 🟠 | `protocol/v2/*`、`web/api/client/*` | 旧 Agent 掉线、数据丢失、事件重复/丢失 | 只做向后兼容增量；参考 `komari-protocol` 冻结测试；本 fork 维护 `xinian5216/komari-agent-stable`，Agent 侧也只允许 Bug/安全修复 |
+| Agent capability / 远控门禁 | 🔴 | `web/api/client/report_v2.go`、`internal/agent_runtime/*`、`web/rpc/jsonrpc/admin.{client,system,xtermjs,file}.go` | “未知”被误判为禁用会破坏旧 Agent；虚报能力会绕过 UI/Server 门禁 | 保持三态语义；Server 必须在下发侧再次拒绝，不只依赖前端隐藏 |
+| 原地迁移脚本 | 🔴 | `install-komari.sh`、`.github/workflows/migration-test.yml` | 在线打包 SQLite、磁盘不足、仅检查进程未检查 API、失败后数据/二进制不一致 | 下载先于停机；停机后冷备份；验证归档、目标版本和 API；失败同时恢复数据与二进制 |
 | 升级 / 备份路径 | 🔴 | `dbcore.backupOnVersionUpgrade()`、`web/backup/*`、`web/recovery/*` | 备份失败导致无法回滚 | 不得弱化备份行为；改动要有测试 |
 | Web 终端 | 🟠 | `web/api/terminal/*`、`admin.xtermjs.go` | 会话劫持、权限绕过、2FA 流程缺陷 | 关注 Origin 校验与会话归属校验 |
 | 插件系统 | 🟠 | `internal/plugin/*`、`pkg/jsruntime/*` | 插件权限绕过、宿主崩溃、市场下载 SSRF | 检查权限清单与路径限制；勿放宽文件/网络访问 |

@@ -30,7 +30,7 @@ Agent 启动
 
 | 方向 | 方法 | 说明 |
 | --- | --- | --- |
-| Agent→Server | `agent.report` | 实时监控数据（cpu/ram/swap/load/disk/network/connections/gpu/uptime/process） |
+| Agent→Server | `agent.report` | 实时监控数据；可选上报 `capabilities` / `privilege_level`（Stable.2 增量） |
 | Agent→Server | `agent.basicInfo` | 静态信息（os/kernel/arch/cpu/内存/磁盘/GPU/ipv4/ipv6/version） |
 | Agent→Server | `agent.pingResult` | ping 探测结果 |
 | Agent→Server | `agent.taskResult` | 远程执行结果（含 exit_code / finished_at RFC3339） |
@@ -42,7 +42,16 @@ Agent 启动
 事件结构（`protocol/v2/jsonrpc.go:Event`）：`id / method / params / created_at / expires_at`；
 Agent 通过下次 `agent.report` 的 `ack_event_ids` 确认；服务端保证 at-least-once，Agent 需按 id 幂等。
 
-## 4. 其它通道
+## 4. capability 与远程控制三态
+
+- capability 仅保存在 `internal/agent_runtime` 内存态，并通过管理员节点 DTO 暴露；数据库 Schema 不变。
+- 新 Agent 在 `agent.report` 中上报实际能力和权限级别；字段可选，旧 Agent 不发送时仍可连接。
+- `remote_control_known=true` 且缺少 `exec` / `terminal` / `file` 时，Server 必须在下发侧拒绝对应操作，
+  Web 同时隐藏或禁用入口。
+- `remote_control_known=false` 表示旧 Agent/尚未首次上报，必须保持历史行为，不能按“明确禁用”处理。
+- capability 是安全门禁的一部分但不是鉴权替代品；token、角色、会话归属与 Origin 校验仍必须通过。
+
+## 5. 其它通道
 
 | 通道 | 端点 | 说明 |
 | --- | --- | --- |
@@ -50,11 +59,12 @@ Agent 通过下次 `agent.report` 的 `ack_event_ids` 确认；服务端保证 a
 | 文件传输 | `GET|POST /api/clients/transfer/:id` | 短时令牌 + 原始流（`web/filemanager/transfer.go`） |
 | 前端实时 | `GET /api/clients`（WS） | 面向浏览器的只读数据流 |
 
-## 5. 版本兼容要求（改代码前必读）
+## 6. 版本兼容要求（改代码前必读）
 
 1. **不得**修改 `protocol/v2` 中的方法与字段名；新增字段必须可选、旧 Agent 可忽略。
 2. 服务端必须同时接受 WS 与 POST 两种传输，且 POST 响应里的 `result.events[]` 语义不变。
 3. `agent.report` 缺失/多出字段要能容错（旧 Agent 不发送 GPU 等新字段）。
-4. Server 版本与 Agent 版本**解耦**：Agent 由本 fork 的 `xinian5216/komari-agent-stable` 独立发版
+4. capability 必须保持可选与三态语义；不得要求旧 Agent 必须上报，也不得仅靠前端隐藏实现安全门禁。
+5. Server 版本与 Agent 版本**解耦**：Agent 由本 fork 的 `xinian5216/komari-agent-stable` 独立发版
    （安装/更新通道同指向该仓库）；上游 `komari-agent` 仅作为择优移植来源。协议仍冻结为本文档描述的 v2。
-5. 涉及协议改动的 PR：同步更新本文件 + `CHANGELOG.md` 的 Compatibility 段。
+6. 涉及协议改动的 PR：同步更新本文件 + `CHANGELOG.md` 的 Compatibility 段。

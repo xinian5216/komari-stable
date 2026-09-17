@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Lightweight .agent/ index consistency check (CI + local).
 
-只做"存在性"级别的轻量校验，避免误报：
+做轻量、可从源码确定的校验，避免主观语义误报：
   1) .agent/ 下必需索引文件是否齐全；
   2) PROJECT_MAP.md 里提到的一级目录/文件是否真的存在；
   3) 仓库里出现的一级目录是否被 PROJECT_MAP.md 覆盖（只提示，不失败）。
+  4) 少量容易漂移的事实：配置表名、capability 文档、迁移 Agent 最低版本。
 
 用法：
     python scripts/check_agent_index.py            # 在仓库根执行
@@ -83,6 +84,45 @@ def check_targets(root: Path, targets: list[str]) -> list[str]:
     return missing
 
 
+def check_source_facts(root: Path) -> list[str]:
+    """只检查能从同仓库源码直接证明、且曾发生过文档漂移的事实。"""
+    errors: list[str] = []
+    agent_dir = root / ".agent"
+    all_docs = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in agent_dir.glob("*.md")
+    )
+
+    config_source = (root / "internal/config/config.go").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    if 'return "configs"' in config_source and "config_items" in all_docs:
+        errors.append(".agent 文档仍把当前物理配置表写成 config_items；实际 TableName() 为 configs")
+
+    protocol_source = (root / "protocol/v2/jsonrpc.go").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    protocol_doc = (agent_dir / "AGENT_PROTOCOL.md").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    if "Capabilities" in protocol_source:
+        for required in ("capabilities", "privilege_level", "remote_control_known"):
+            if required not in protocol_doc:
+                errors.append(f"AGENT_PROTOCOL.md 未记录当前协议事实：{required}")
+
+    installer = (root / "install-komari.sh").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    readme = (root / "README.md").read_text(encoding="utf-8", errors="replace")
+    match = re.search(r'^V2_MIN_AGENT="([^"]+)"', installer, flags=re.M)
+    if match and f"**{match.group(1)} or newer**" not in readme and f"**{match.group(1)}**" not in readme:
+        errors.append(
+            "install-komari.sh 的 V2_MIN_AGENT 与 README 中建议的迁移最低版本不一致"
+        )
+
+    return errors
+
+
 def main() -> int:
     root = repo_root()
     failed = False
@@ -115,6 +155,15 @@ def main() -> int:
     uncovered = sorted(actual - covered)
     if uncovered:
         print("NOTE: 一级目录未在 PROJECT_MAP.md 中登记（仅提示）：" + ", ".join(uncovered))
+
+    fact_errors = check_source_facts(root)
+    if fact_errors:
+        failed = True
+        print("FAIL: .agent/ 与源码关键事实不一致：")
+        for error in fact_errors:
+            print(f"  - {error}")
+    else:
+        print("OK: 配置表、Agent capability 与迁移版本事实一致")
 
     return 1 if failed else 0
 

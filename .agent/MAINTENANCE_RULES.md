@@ -68,8 +68,8 @@ force push、删除 Git tag / branch、重写已发布历史、覆盖不可变 D
 | 依赖增删（关键依赖） | `DEPENDENCY_MAP.md` |
 | 风险区变化 | `KNOWN_RISKS.md` |
 
-CI（`stable-ci.yml` 的 `agent-index` 作业）只做轻量校验：索引文件是否齐全、`PROJECT_MAP.md`
-提到的一级目录是否存在。**不做语义校验，避免误报**。
+CI（`stable-ci.yml` 的 `agent-index` 作业）做轻量校验：索引文件是否齐全、`PROJECT_MAP.md`
+提到的一级目录是否存在，以及少量能从源码确定的关键事实。复杂语义仍需人工复核。
 
 ## 9. 自检清单（提交前）
 

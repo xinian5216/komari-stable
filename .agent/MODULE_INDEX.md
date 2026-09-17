@@ -11,9 +11,9 @@
 
 ## 节点与上报
 
-- 相关文件：`web/api/client/register.go(AutoDiscovery)`、`report_v2.go`、`ingest.go`、`presence.go`、
+- 相关文件：`web/api/client/autoDiscovery.go`、`report_v2.go`、`ingest.go`、`presence.go`、
   `uploadBasicInfo.go`、`web/connection/safe_conn.go`、`database/clients/*`、`internal/metricstore/report_*.go`
-- 职责：自动发现注册、v2 上报（WS/POST）、在线状态、实时状态缓存。
+- 职责：自动发现注册、v2 上报（WS/POST）、在线状态、实时状态缓存、Agent capability/权限级别内存态。
 
 ## 指标存储
 
@@ -25,7 +25,7 @@
 
 - 相关文件：`internal/config/*`（settings.go 为配置项定义）、`internal/managedconfig/*`、
   `database/models/*`、`cmd/flags/config.go`
-- 职责：配置项默认值/读写（存 `config_items` 表）、启动参数（`-l` 监听、`-d` 数据库路径）、
+- 职责：配置项默认值/读写（存 `configs` 键值表）、启动参数（`-l` 监听、`-d` 数据库路径）、
   主题受管配置。
 
 ## 数据库核心
@@ -37,7 +37,7 @@
 ## Agent 协议
 
 - 相关文件：`protocol/v2/jsonrpc.go`、`web/api/client/*`、`web/rpc/jsonrpc/transport.go`
-- 职责：v2 JSON-RPC 方法常量与结构、WS/POST 传输、事件下发与 ack。
+- 职责：v2 JSON-RPC 方法常量与结构、WS/POST 传输、事件下发与 ack、可选 capability 上报。
 
 ## 终端（Web SSH）
 

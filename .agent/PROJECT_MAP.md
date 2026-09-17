@@ -12,7 +12,7 @@ internal/      服务端内部逻辑（不对外复用）：
                metricstore/ 指标库存取与生命周期；plugin/ 插件宿主；scheduler/ 定时任务；
                lifecycle/ 重启；managedconfig/ 主题受管配置；sqlitetune/ SQLite 调优
 pkg/           可复用库：
-               metric/ 指标存储引擎（30k 行，最大模块）；jsruntime/ goja JS 运行时（插件用）；
+               metric/ 指标存储引擎（最大模块，规模会随维护变化）；jsruntime/ goja JS 运行时（插件用）；
                rpc/ RPC 主体与 principal；timeutil/
 protocol/v2/   Agent 线协议定义（JSON-RPC 2.0 方法与结构体，v1 已移除）
 utils/         通用工具：log、notifier（通知调度）、messageSender（各渠道）、geoip、item、renewal、
@@ -46,7 +46,7 @@ data/                      运行期数据目录（komari.db / metrics.db / plug
 
 | 仓库 | 用途 |
 | --- | --- |
-| `xinian5216/komari-web-stable` | 前端默认主题（本 fork 维护，CI 固定引用其 tag） |
+| `xinian5216/komari-web-stable` | 嵌入式核心前端（本 fork 维护，CI 固定引用其 tag） |
 | `xinian5216/komari-agent-stable` | Agent（本 fork 维护的镜像：安装/更新通道；**v2 协议冻结、向后兼容**） |
 | `xinian5216/komari-next-stable` | **Bundled preferred frontend theme**（Komari Next 的稳定镜像；Server 按不可变 tag 固定其 `dist-release.zip`，见 `bundled-themes.lock.json`） |
 | `komari-monitor/komari-agent` | Agent 的上游来源（仍活跃，作为择优移植来源） |
