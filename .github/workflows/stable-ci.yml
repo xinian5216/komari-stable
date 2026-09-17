@@ -66,6 +66,26 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test ./... -count=1
+      # 测试必须自清理：运行期数据（主题、数据库等）不得落进源码树。
+      # 构建期资产与已知的包内 data 目录由 .gitignore 覆盖，因此这里要求 git 完全干净；
+      # 空目录不会被 git 看见，所以再单独检查主题运行期文件。
+      - name: Fail if the test run polluted the worktree
+        run: |
+          set -euxo pipefail
+          status="$(git status --porcelain)"
+          printf '%s\n' "$status"
+          if [ -n "$status" ]; then
+            echo "FAIL: go test left tracked-visible changes in the source tree"
+            git status --porcelain
+            exit 1
+          fi
+          leftovers="$(find . -path '*/data/theme/*' -type f -not -path './.git/*' | head -20)"
+          if [ -n "$leftovers" ]; then
+            echo "FAIL: go test wrote theme runtime files into the source tree:"
+            printf '%s\n' "$leftovers"
+            exit 1
+          fi
+          echo "OK: worktree clean and no theme runtime files were created"
 
   vuln:
     needs: prepare-assets
