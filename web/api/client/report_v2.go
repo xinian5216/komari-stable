@@ -43,10 +43,24 @@ func bindV2Params[T any](raw any, target *T) error {
 	return json.Unmarshal(b, target)
 }
 
-// ingestReportedCapabilities stores the capability list an agent reports in its
-// basic info. Older agents simply do not send the fields, which leaves them on
-// the legacy path.
-func ingestReportedCapabilities(uuid string, info map[string]interface{}) {
+// ingestReportedCapabilities stores the capability list and privilege level an
+// agent reports.
+//
+// Both transports funnel into here: agent.report (typed struct, used in
+// WebSocket and POST mode) and the agent.pull fallback. agent.basicInfo cannot
+// carry them: released servers map that payload onto SQL columns and reject
+// unknown keys.
+func ingestReportedCapabilities(uuid string, capabilities []string, privilegeLevel string) {
+	if capabilities == nil {
+		return
+	}
+	agent_runtime.SetClientCapabilities(uuid, capabilities, privilegeLevel)
+}
+
+// ingestReportedCapabilitiesFromBasicInfo reads the same fields from a basic
+// info payload. Current agents do not send them there, but the server stays
+// tolerant if they ever appear.
+func ingestReportedCapabilitiesFromBasicInfo(uuid string, info map[string]interface{}) {
 	if info == nil {
 		return
 	}
@@ -59,7 +73,7 @@ func ingestReportedCapabilities(uuid string, info map[string]interface{}) {
 		return
 	}
 	privilegeLevel, _ := info["privilege_level"].(string)
-	agent_runtime.SetClientCapabilities(uuid, capabilities, privilegeLevel)
+	ingestReportedCapabilities(uuid, capabilities, privilegeLevel)
 }
 
 func toStringSlice(raw interface{}) []string {
@@ -97,6 +111,7 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 		if err := ingestReport(uuid, params.Report, true); err != nil {
 			return v2.Error(req.ID, -32000, "failed to save report", err.Error())
 		}
+		ingestReportedCapabilities(uuid, params.Report.Capabilities, params.Report.PrivilegeLevel)
 		return v2.Success(req.ID, gin.H{
 			"status": "success",
 			"events": agent_runtime.TakeV2Events(uuid, params.AckEventIDs, 8),
@@ -109,7 +124,7 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 		if err := ingestBasicInfo(uuid, params.Info, ""); err != nil {
 			return v2.Error(req.ID, -32000, "failed to save basic info", err.Error())
 		}
-		ingestReportedCapabilities(uuid, params.Info)
+		ingestReportedCapabilitiesFromBasicInfo(uuid, params.Info)
 		return v2.Success(req.ID, gin.H{"status": "success"})
 	case v2.MethodAgentPingResult:
 		var params v2.PingResultParams

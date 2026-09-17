@@ -81,6 +81,12 @@ type Report struct {
 	Message     string            `json:"message"`
 	Method      string            `json:"method,omitempty"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+
+	// Remote control capabilities an agent advertises. The report is parsed
+	// into this struct, so servers that predate the fields ignore them; basic
+	// info cannot carry them because it is mapped onto SQL columns.
+	Capabilities   []string `json:"capabilities,omitempty"`
+	PrivilegeLevel string   `json:"privilege_level,omitempty"`
 }
 
 type CPUReport struct {
