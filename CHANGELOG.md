@@ -18,6 +18,12 @@
 
 ### Fixed
 
+- **全新安装失败时的 bundled theme 回滚边界**：安装向导的设置在写入失败时，原先只回滚刚创建的账户，
+  已 seed 的 `data/theme/next` 会残留；重试时 seed 因目录已存在而跳过，使本应默认 Next 的新实例退回 `default`。
+  现在 `themebundle.Seed` 的结果显式区分 `Created` / `Skipped`（并带 `Short` / `Version` / `Path`），
+  写入失败时按该结果回滚**本次**创建的目录：先删账户、再清本次 seed 的主题，回到可重新安装的干净状态；
+  **安装开始前就已存在的 `data/theme/next` 绝不删除或修改**（回滚会重新校验路径形状与目录内 manifest），
+  单个目录不可信时放弃回滚并记录错误，绝不误删。可用且已存在的 next 目录只被"采用"（写 `theme=next`），内容保持原样。
 - **多资产 Release 的主题更新选择错误**：`web/api/admin/theme.go` 的 `getGitHubReleaseDownloadURL()`
   原先直接取 `assets[0]`，当 Release 同时包含主题包与校验和（如本 fork 的 `dist-release.zip` +
   `SHA256SUMS` + `dist-release.zip.sha256`）时可能下载到校验和文件。现在**精确优先 `dist-release.zip`**、
