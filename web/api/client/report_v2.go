@@ -43,6 +43,47 @@ func bindV2Params[T any](raw any, target *T) error {
 	return json.Unmarshal(b, target)
 }
 
+// ingestReportedCapabilities stores the capability list an agent reports in its
+// basic info. Older agents simply do not send the fields, which leaves them on
+// the legacy path.
+func ingestReportedCapabilities(uuid string, info map[string]interface{}) {
+	if info == nil {
+		return
+	}
+	raw, ok := info["capabilities"]
+	if !ok {
+		return
+	}
+	capabilities := toStringSlice(raw)
+	if capabilities == nil {
+		return
+	}
+	privilegeLevel, _ := info["privilege_level"].(string)
+	agent_runtime.SetClientCapabilities(uuid, capabilities, privilegeLevel)
+}
+
+func toStringSlice(raw interface{}) []string {
+	switch value := raw.(type) {
+	case []string:
+		return value
+	case []interface{}:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if text, ok := item.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	case string:
+		if value == "" {
+			return nil
+		}
+		return []string{value}
+	default:
+		return nil
+	}
+}
+
 func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 	if req.JSONRPC != v2.Version {
 		return v2.Error(req.ID, -32600, "invalid jsonrpc version", nil)
@@ -68,6 +109,7 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 		if err := ingestBasicInfo(uuid, params.Info, ""); err != nil {
 			return v2.Error(req.ID, -32000, "failed to save basic info", err.Error())
 		}
+		ingestReportedCapabilities(uuid, params.Info)
 		return v2.Success(req.ID, gin.H{"status": "success"})
 	case v2.MethodAgentPingResult:
 		var params v2.PingResultParams
@@ -98,6 +140,9 @@ func handleV2RPC(uuid string, req v2.Request, allowWait bool) v2.Response {
 		}
 		refreshPostPresence(uuid)
 		agent_runtime.MarkV2Client(uuid)
+		// The POST fallback is the only place an agent reports capabilities in
+		// that mode; the WebSocket mode reports them through agent.basicInfo.
+		agent_runtime.SetClientCapabilities(uuid, params.Capabilities, "")
 		timeout := 0 * time.Second
 		if allowWait {
 			timeout = 25 * time.Second

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -40,18 +41,32 @@ func getV2EventQueueLocked(uuid string) *v2EventQueue {
 	return q
 }
 
-func DispatchV2Event(uuid, method string, params any) bool {
+// ErrAgentOffline is returned when an event cannot be delivered because the
+// agent is neither connected nor known as a v2 client.
+var ErrAgentOffline = errors.New("agent offline")
+
+// DispatchV2Event sends a v2 event to an agent, either directly over its
+// connection or through its event queue.
+//
+// It fails closed on capabilities: an agent that reported not offering the
+// capability a method needs is refused with ErrCapabilityUnavailable instead of
+// receiving a command it would only reject. Agents that reported nothing keep
+// the historical behaviour.
+func DispatchV2Event(uuid, method string, params any) error {
+	if err := CheckMethodCapability(uuid, method); err != nil {
+		return err
+	}
 	if conn := GetConnectedClients()[uuid]; conn != nil {
 		payload := v2.Request{JSONRPC: v2.Version, Method: method, Params: params}
 		if conn.WriteJSON(payload) == nil {
-			return true
+			return nil
 		}
 	}
 	if !IsV2Client(uuid) {
-		return false
+		return ErrAgentOffline
 	}
 	EnqueueV2Event(uuid, method, params)
-	return true
+	return nil
 }
 
 func DispatchPing(uuid string, params v2.PingParams) bool {
