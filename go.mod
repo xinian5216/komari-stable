@@ -26,7 +26,7 @@ require github.com/dop251/base64dec v0.0.0-20231022112746-c6c9f9a96217 // indire
 
 // Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto #1
 // golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange #3
-require golang.org/x/crypto v0.51.0
+require golang.org/x/crypto v0.52.0
 
 // HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net #2
 // golang.org/x/net vulnerable to Cross-site Scripting #4
