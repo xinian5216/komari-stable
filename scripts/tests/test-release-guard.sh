@@ -180,6 +180,104 @@ check "exit non-zero when the registry cannot be reached" \
 check "the failure names the infrastructure problem" \
 	bash -c "bash '$GUARD' image ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2 ghcr.io/xinian5216/komari-stable:stable 2>&1 | grep -q 'cannot reach the registry'"
 
+# --------------------------------------------------------------- contract
+#
+# The immutability policy must travel with the released tag: the workflows may
+# check out the tag as their build source, but they must never take the guard
+# from a mutable branch.
+
+RELEASE_YML="${ROOT}/.github/workflows/stable-release.yml"
+
+check_file_contains() { # <desc> <file> <pattern>
+	if grep -q -- "$3" "$2" 2>/dev/null; then
+		printf '  ok   %s
+' "$1"
+		pass=$((pass + 1))
+	else
+		printf '  FAIL %s
+' "$1"
+		fail=$((fail + 1))
+	fi
+}
+check_file_absent() { # <desc> <file> <pattern>
+	if grep -q -- "$3" "$2" 2>/dev/null; then
+		printf '  FAIL %s
+' "$1"
+		fail=$((fail + 1))
+	else
+		printf '  ok   %s
+' "$1"
+		pass=$((pass + 1))
+	fi
+}
+
+printf '
+== guard resolution contract ==
+'
+check_file_absent "stable-release.yml never derives the guard from the triggering branch" "${RELEASE_YML}" "github.ref_name"
+check_file_absent "stable-release.yml never fetches a branch for the guard" "${RELEASE_YML}" "FETCH_HEAD"
+check_file_contains "stable-release.yml refuses legacy tags explicitly" "${RELEASE_YML}" "[ ! -f scripts/release-guard.sh ]"
+
+release_tag_refs="$(grep -c 'ref: \${{ env.RELEASE_TAG }}' "${RELEASE_YML}" 2>/dev/null || true)"
+if [ "${release_tag_refs:-0}" -ge 4 ]; then
+	printf '  ok   every job that runs repo tooling checks out the released tag (%s)
+' "${release_tag_refs}"
+	pass=$((pass + 1))
+else
+	printf '  FAIL only %s job(s) check out the released tag, expected at least 4
+' "${release_tag_refs:-0}"
+	fail=$((fail + 1))
+fi
+
+# Functional: the refusal text is extracted from the workflow, then executed in a
+# checkout that has the guard and one that does not.
+CONTRACT_DIR="${WORK}/guard-contract"
+mkdir -p "${CONTRACT_DIR}/tag/scripts" "${CONTRACT_DIR}/legacy"
+printf '#!/usr/bin/env bash
+exit 0
+' > "${CONTRACT_DIR}/tag/scripts/release-guard.sh"
+sed -n '/if \[ ! -f scripts\/release-guard\.sh \]; then/,/^          fi$/p' "${RELEASE_YML}" | head -4 > "${CONTRACT_DIR}/require.sh"
+
+if [ -s "${CONTRACT_DIR}/require.sh" ]; then
+	if (cd "${CONTRACT_DIR}/tag" && bash "${CONTRACT_DIR}/require.sh") > /dev/null 2>&1; then
+		printf '  ok   a release that ships the guard passes the requirement
+'
+		pass=$((pass + 1))
+	else
+		printf '  FAIL a release that ships the guard was rejected
+'
+		fail=$((fail + 1))
+	fi
+	legacy_status=0
+	# set -e is active in this suite: a failure here is the expected outcome.
+	legacy_out="$(cd "${CONTRACT_DIR}/legacy" && bash "${CONTRACT_DIR}/require.sh" 2>&1)" || legacy_status=$?
+	if [ "${legacy_status}" -ne 0 ]; then
+		printf '  ok   a legacy release without the guard fails closed
+'
+		pass=$((pass + 1))
+	else
+		printf '  FAIL a legacy release without the guard was accepted
+'
+		fail=$((fail + 1))
+	fi
+	case "${legacy_out}" in
+		*"this legacy release does not contain the immutable release guard; automatic repair is refused"*)
+			printf '  ok   the legacy failure says why it refused
+'
+			pass=$((pass + 1))
+			;;
+		*)
+			printf '  FAIL the legacy failure does not explain the refusal
+'
+			fail=$((fail + 1))
+			;;
+	esac
+else
+	printf '  FAIL could not extract the legacy guard refusal from stable-release.yml
+'
+	fail=$((fail + 1))
+fi
+
 echo
 echo "release guard self-test: ${pass} passed, ${fail} failed"
 [ "$fail" -eq 0 ]
