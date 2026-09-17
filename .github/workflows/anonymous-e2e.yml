@@ -220,18 +220,34 @@ jobs:
           echo "--- Agent 安装脚本的来源（匿名 raw）---"
           curl -fsSL -o /tmp/agent-install.sh "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
           grep -n "REPO_OWNER=\|REPO_NAME=" /tmp/agent-install.sh
-          echo "--- 面板首页里的入口资源（服务端内嵌主题）---"
+          echo "--- 首页与后台分别由谁提供（stable.1 起：/ 用随包主题，/admin 用嵌入式默认前端）---"
           curl -fsS -m 10 -o /tmp/panel-index.html "http://127.0.0.1:${PORT}/"
-          awk 'match($0, /entry-index[^"]*/) { print substr($0, RSTART, RLENGTH) }' /tmp/panel-index.html
+          grep -qE "__next|_next/" /tmp/panel-index.html && echo "OK: / 由随包 Komari Next 主题提供"
+          curl -fsS -m 10 -o /tmp/panel-admin.html "http://127.0.0.1:${PORT}/admin"
+          awk 'match($0, /entry-index[^"]*/) { print substr($0, RSTART, RLENGTH) }' /tmp/panel-admin.html
 
-      - name: "9) Verify the web UI loads from the embedded theme"
+      - name: "9) Verify the fresh install serves the bundled Komari Next theme"
         run: |
           set -euxo pipefail
+          echo "--- 随包主题是否落在 data/theme/next ---"
+          sudo test -f /opt/komari/data/theme/next/komari-theme.json
+          sudo cat /opt/komari/data/theme/next/komari-theme.json | python3 -c "import json,sys;m=json.load(sys.stdin);print('manifest:',m['short'],m['version'],m['author'],m['url']);assert m['short']=='next';assert 'xinian5216/komari-next-stable' in m['url']"
+
+          echo "--- theme 设置 ---"
+          sudo apt-get install -y -qq sqlite3 >/dev/null
+          theme=$(sudo sqlite3 /opt/komari/data/komari.db "select value from configs where key='theme';")
+          echo "configs.theme='${theme}'"
+          [ "$theme" = '"next"' ] || { echo "FAIL: a fresh install must default to the bundled theme"; exit 1; }
+
+          echo "--- 前台由 Next 提供 ---"
           curl -s -m 15 -o /tmp/index.html -w "GET / -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}/"
-          grep -q 'id="app"' /tmp/index.html && echo "OK: 面板 HTML（内嵌主题）正常返回"
-          entry=$(awk -F'"' 'match($0, /\/assets\/[^"]*\.js/) { print substr($0, RSTART, RLENGTH); exit }' /tmp/index.html)
-          curl -s -m 15 -o /tmp/entry.js -w "GET ${entry} -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}${entry}"
-          grep -o "xinian5216/[a-z-]*" /tmp/entry.js | sort -u || true
+          grep -qE "__next|_next/" /tmp/index.html || { echo "FAIL: / is not the bundled Komari Next theme"; exit 1; }
+          if grep -q "entry-index-" /tmp/index.html; then echo "FAIL: / served the embedded default instead of next"; exit 1; fi
+
+          echo "--- 后台仍由嵌入式默认前端提供 ---"
+          curl -s -m 15 -o /tmp/admin.html -w "GET /admin -> %{http_code} bytes=%{size_download}\n" "http://127.0.0.1:${PORT}/admin"
+          grep -q 'id="app"' /tmp/admin.html && echo "OK: /admin 仍是嵌入式默认前端"
+          if grep -qE "__next|_next/" /tmp/admin.html; then echo "FAIL: /admin leaked the bundled theme"; exit 1; fi
 
       - name: "10) Report the versions in play"
         if: always()
