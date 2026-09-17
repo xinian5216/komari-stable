@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -111,8 +112,14 @@ func adminExec(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcE
 		return nil, rpc.MakeError(rpc.InvalidParams, "clients is required", nil)
 	}
 
-	var onlineClients, queuedClients, offlineClients []string
+	var onlineClients, queuedClients, offlineClients, unsupportedClients []string
 	for _, uuid := range params.Clients {
+		// An agent that reported no exec capability (remote control disabled)
+		// must not receive commands it would only reject.
+		if err := agent_runtime.CheckMethodCapability(uuid, v2.MethodAgentExec); err != nil {
+			unsupportedClients = append(unsupportedClients, uuid)
+			continue
+		}
 		if client := agent_runtime.GetConnectedClients()[uuid]; client != nil {
 			onlineClients = append(onlineClients, uuid)
 		} else if agent_runtime.IsAgentOnline(uuid) {
@@ -122,6 +129,9 @@ func adminExec(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcE
 		}
 	}
 	if len(onlineClients) == 0 && len(queuedClients) == 0 {
+		if len(unsupportedClients) > 0 {
+			return nil, rpc.MakeError(rpc.InvalidParams, "capability unavailable: remote control is disabled on "+strings.Join(unsupportedClients, ", "), nil)
+		}
 		return nil, rpc.MakeError(rpc.InvalidParams, "No clients connected", nil)
 	}
 	taskId := utils.GenerateRandomString(16)
@@ -141,20 +151,34 @@ func adminExec(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcE
 		}
 	}
 	for _, uuid := range queuedClients {
-		agent_runtime.DispatchV2Event(uuid, v2.MethodAgentExec, v2.ExecParams{TaskID: taskId, Command: params.Command})
+		err := agent_runtime.DispatchV2Event(uuid, v2.MethodAgentExec, v2.ExecParams{TaskID: taskId, Command: params.Command})
+		if errors.Is(err, agent_runtime.ErrCapabilityUnavailable) {
+			unsupportedClients = append(unsupportedClients, uuid)
+		}
 	}
 	actor, ip := auditActor(ctx)
 	auditlog.Log(ip, actor, "REC, task id: "+taskId, "warn")
+	if len(unsupportedClients) > 0 {
+		for _, uuid := range unsupportedClients {
+			_ = tasks.SaveTaskResult(taskId, uuid, "capability unavailable: remote control is disabled on this agent", -1, time.Now().UTC())
+		}
+	}
 	if len(offlineClients) > 0 {
 		for _, uuid := range offlineClients {
 			tasks.SaveTaskResult(taskId, uuid, "Client offline!", -1, time.Now().UTC())
 		}
 	}
-	return map[string]any{
+	response := map[string]any{
 		"task_id":        taskId,
 		"clients":        onlineClients,
 		"queued_clients": queuedClients,
-	}, nil
+	}
+	if len(unsupportedClients) > 0 {
+		// Reported explicitly instead of failing silently: the caller asked for
+		// clients that cannot execute commands right now.
+		response["capability_unavailable_clients"] = unsupportedClients
+	}
+	return response, nil
 }
 
 func adminTestSendMessage(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

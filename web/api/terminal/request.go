@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -13,8 +14,17 @@ import (
 	"github.com/komari-monitor/komari/web/api"
 )
 
-func dispatchTerminalRequest(uuid, id string) bool {
+func dispatchTerminalRequest(uuid, id string) error {
 	return agent_runtime.DispatchV2Event(uuid, v2.MethodAgentTerminal, v2.TerminalRequestParams{RequestID: id})
+}
+
+// terminalDispatchMessage turns a dispatch failure into the text shown in the
+// terminal window.
+func terminalDispatchMessage(err error) string {
+	if errors.Is(err, agent_runtime.ErrCapabilityUnavailable) {
+		return "Remote control is not enabled on this agent\n该被控端未启用远程控制\n"
+	}
+	return "Client offline!\n被控端离线!\n"
 }
 
 func RequestTerminal(c *gin.Context) {
@@ -73,8 +83,8 @@ func RequestTerminal(c *gin.Context) {
 			return nil
 		})
 		conn.WriteJSON(gin.H{"request_id": id})
-		if !dispatchTerminalRequest(uuid, id) {
-			conn.WriteMessage(1, []byte("Client offline!\n被控端离线!\n"))
+		if err := dispatchTerminalRequest(uuid, id); err != nil {
+			conn.WriteMessage(1, []byte(terminalDispatchMessage(err)))
 			closeSession(id)
 			return
 		}
@@ -105,7 +115,8 @@ func RequestTerminal(c *gin.Context) {
 		return nil
 	})
 	conn.WriteJSON(gin.H{"request_id": id})
-	if !dispatchTerminalRequest(uuid, id) {
+	if err := dispatchTerminalRequest(uuid, id); err != nil {
+		conn.WriteMessage(1, []byte(terminalDispatchMessage(err)))
 		conn.Close()
 		closeSession(id)
 		return

@@ -20,8 +20,11 @@ const defaultTimeout = 30 * time.Second
 var (
 	ErrOffline      = errors.New("agent is not connected")
 	ErrUnsupported  = errors.New("agent does not support file operations")
-	ErrTimeout      = errors.New("file operation timed out")
-	ErrUnknownToken = errors.New("unknown or expired file operation")
+	// ErrRemoteControlDisabled means the agent reported that remote control is
+	// disabled on its side, so no file operation may be sent.
+	ErrRemoteControlDisabled = errors.New("remote control is disabled on this agent")
+	ErrTimeout               = errors.New("file operation timed out")
+	ErrUnknownToken          = errors.New("unknown or expired file operation")
 
 	pendingMu sync.Mutex
 	pending   = make(map[string]pendingCall)
@@ -57,13 +60,16 @@ func Call(ctx context.Context, uuid, op string, args map[string]any, options ...
 	pendingMu.Unlock()
 	defer removePending(requestID)
 
-	ok := agent_runtime.DispatchV2Event(uuid, v2.MethodAgentFile, v2.FileOperation{
+	dispatchErr := agent_runtime.DispatchV2Event(uuid, v2.MethodAgentFile, v2.FileOperation{
 		UUID:      uuid,
 		RequestID: requestID,
 		Op:        op,
 		Args:      args,
 	})
-	if !ok {
+	if dispatchErr != nil {
+		if errors.Is(dispatchErr, agent_runtime.ErrCapabilityUnavailable) {
+			return nil, ErrRemoteControlDisabled
+		}
 		return nil, ErrOffline
 	}
 
