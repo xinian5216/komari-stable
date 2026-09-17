@@ -108,8 +108,9 @@ jobs:
           set -euxo pipefail
           PORT=25880
           docker volume create komari-preview-data >/dev/null
+          # 必须显式给出二进制路径：镜像的 CMD 是 ["/app/komari","server"]，追加参数会整体替换 CMD。
           docker run -d --name komari-preview -p ${PORT}:${PORT} -v komari-preview-data:/app/data \
-            komari-stable:preview-amd64 server -l 0.0.0.0:${PORT} >/dev/null
+            komari-stable:preview-amd64 /app/komari server -l 0.0.0.0:${PORT} >/dev/null
           trap 'docker logs komari-preview | tail -40 || true; docker rm -f komari-preview >/dev/null 2>&1 || true; docker volume rm komari-preview-data >/dev/null 2>&1 || true' EXIT
           for i in $(seq 1 45); do curl -sf "http://127.0.0.1:${PORT}/api/install/status" >/dev/null && break; sleep 2; done
           curl -s -o /dev/null -w 'install http=%{http_code}\n' -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
