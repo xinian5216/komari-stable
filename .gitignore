@@ -109,3 +109,9 @@ coverage.txt
 # The embedded default theme is generated at build time (frontend repo → tar+zstd).
 # Never commit it: CI builds it from the pinned frontend ref.
 web/public/defaultTheme/
+
+# 构建期资产（由 scripts/prepare-assets.py 按 bundled-themes.lock.json 生成，不入库）
+web/public/bundledTheme/next.zip
+web/public/bundledTheme/provenance.json
+web/public/assets.provenance.json
+komari-web/

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "_comment": "Single source of truth for the build-time assets that //go:embed resolves. Both CI and local builds must prepare assets from this file only - never from main, latest, or an unverified asset. Update entries deliberately and record the change in CHANGELOG.md.",
+  "assets": {
+    "embedded_default_frontend": {
+      "role": "embedded core frontend: admin panel, terminal, recovery/restricted pages and the fallback theme",
+      "repository": "xinian5216/komari-web-stable",
+      "tag": "v1.5.0-stable.0",
+      "commit": "c9d474950272b9a10cc6fbd038946fcfc20b0100",
+      "build": {
+        "node_version": "23",
+        "install": "npm ci",
+        "script": "npm run build",
+        "outputs": [
+          "web/public/defaultTheme/dist.tar.zst",
+          "web/public/defaultTheme/komari-theme.json"
+        ]
+      }
+    },
+    "bundled_preferred_theme": {
+      "role": "bundled preferred frontend theme, seeded into data/theme/next for fresh installations only",
+      "repository": "xinian5216/komari-next-stable",
+      "tag": "v1.4.19-stable.1",
+      "commit": "96a4bd966f164ff681d15da2f6e2d4ab682539ff",
+      "asset": "dist-release.zip",
+      "asset_url": "https://github.com/xinian5216/komari-next-stable/releases/download/v1.4.19-stable.1/dist-release.zip",
+      "sha256": "b9001cbbbbc4c1add0ff850a1b0ddb854e9df1d3173e3e54628d4337de0b19d6",
+      "theme_short": "next",
+      "theme_version": "1.4.19",
+      "outputs": [
+        "web/public/bundledTheme/next.zip"
+      ]
+    }
+  }
+}

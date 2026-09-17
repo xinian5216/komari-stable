@@ -1,0 +1,26 @@
+name: Restore build assets
+description: Download and unpack previously prepared build assets (embedded default frontend + bundled preferred theme).
+
+inputs:
+  artifact-name:
+    description: Assets artifact name.
+    default: komari-assets
+
+runs:
+  using: composite
+  steps:
+    - name: Download assets artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/komari-assets
+
+    - name: Extract assets artifact
+      shell: bash
+      run: |
+        set -euxo pipefail
+        rm -rf web/public/defaultTheme web/public/bundledTheme
+        mkdir -p web/public
+        tar -xzf "$RUNNER_TEMP/komari-assets/komari-assets.tar.gz" -C web/public
+        test -s web/public/defaultTheme/dist.tar.zst
+        test -s web/public/bundledTheme/next.zip

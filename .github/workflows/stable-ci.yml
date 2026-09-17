@@ -21,10 +21,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 前端固定引用本 fork 的镜像仓库 + 固定 tag（构建可复现）。
-  # 前端仓库已公开，使用匿名 HTTPS 拉取（不再需要 Deploy Key / secret）。
-  FRONTEND_REPOSITORY: https://github.com/xinian5216/komari-web-stable.git
-  FRONTEND_REF: v1.5.0-stable.0
+  # 构建期资产（嵌入用前端 + 随包主题）统一由 bundled-themes.lock.json 固定：
+  # 仓库、tag、commit、asset、sha256 只有一份事实来源，见 scripts/prepare-assets.py。
+  ASSETS_ARTIFACT: komari-assets
   GO_VERSION: "1.25.x"
   ZIG_VERSION: "0.14.1"
 
@@ -40,25 +39,25 @@ jobs:
       - name: Check .agent index consistency
         run: python scripts/check_agent_index.py
 
-  # 所有需要编译 Go 代码的 job 都依赖前端产物（//go:embed defaultTheme/dist.tar.zst）
-  build-frontend:
+  # 所有需要编译 Go 代码的 job 都依赖构建期资产：
+  # //go:embed defaultTheme/dist.tar.zst（嵌入前端）与 //go:embed bundledTheme（随包主题）。
+  # prepare-assets 是唯一入口：按锁文件准备并校验，之后才能跑 go test/vet/build/govulncheck。
+  prepare-assets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/build-frontend
+      - uses: ./.github/actions/prepare-assets
         with:
-          repository: ${{ env.FRONTEND_REPOSITORY }}
-          ref: ${{ env.FRONTEND_REF }}
-          artifact-name: komari-frontend
+          artifact-name: ${{ env.ASSETS_ARTIFACT }}
 
   test:
-    needs: build-frontend
+    needs: prepare-assets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/restore-assets
         with:
-          artifact-name: komari-frontend
+          artifact-name: ${{ env.ASSETS_ARTIFACT }}
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -69,13 +68,13 @@ jobs:
         run: go test ./... -count=1
 
   vuln:
-    needs: build-frontend
+    needs: prepare-assets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/restore-assets
         with:
-          artifact-name: komari-frontend
+          artifact-name: ${{ env.ASSETS_ARTIFACT }}
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -88,7 +87,7 @@ jobs:
           # 修复以独立的 security:/build: 提交进入，不在本 job 内自动升级依赖。
 
   build:
-    needs: build-frontend
+    needs: prepare-assets
     strategy:
       fail-fast: false
       matrix:
@@ -108,9 +107,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/restore-assets
         with:
-          artifact-name: komari-frontend
+          artifact-name: ${{ env.ASSETS_ARTIFACT }}
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}

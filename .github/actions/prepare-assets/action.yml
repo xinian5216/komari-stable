@@ -1,0 +1,73 @@
+name: Prepare build assets
+description: Prepare every build-time asset (embedded default frontend + bundled preferred theme) from bundled-themes.lock.json and optionally upload them as an artifact.
+
+inputs:
+  artifact-name:
+    description: Artifact name for the prepared assets (empty = do not upload).
+    default: komari-assets
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "23"
+
+    - name: Install zstd
+      shell: bash
+      run: |
+        set -euxo pipefail
+        if ! command -v zstd >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y zstd
+        fi
+
+    - name: Prepare assets from the lock file
+      shell: bash
+      run: |
+        set -euxo pipefail
+        python3 scripts/prepare-assets.py all
+
+    - name: Verify the prepared assets against the lock
+      shell: bash
+      run: |
+        set -euxo pipefail
+        python3 - <<'PY'
+        import hashlib, json, pathlib
+
+        lock = json.load(open("bundled-themes.lock.json", encoding="utf-8"))["assets"]
+        theme = lock["bundled_preferred_theme"]
+
+        zip_path = pathlib.Path("web/public/bundledTheme/next.zip")
+        assert zip_path.exists(), "bundled theme zip is missing"
+        digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+        assert digest == theme["sha256"], f"bundled theme hash {digest} != lock {theme['sha256']}"
+
+        provenance = json.loads(pathlib.Path("web/public/bundledTheme/provenance.json").read_text(encoding="utf-8"))
+        assert provenance["sha256"] == theme["sha256"], "embedded provenance does not match the lock"
+        assert provenance["tag"] == theme["tag"], "embedded provenance tag does not match the lock"
+        assert provenance["theme_short"] == theme["theme_short"], "embedded provenance short does not match the lock"
+
+        tarball = pathlib.Path("web/public/defaultTheme/dist.tar.zst")
+        assert tarball.exists() and tarball.stat().st_size > 0, "default theme tarball is missing"
+        manifest = json.loads(pathlib.Path("web/public/defaultTheme/komari-theme.json").read_text(encoding="utf-8"))
+        assert manifest.get("short") == "default", f"unexpected default theme short: {manifest.get('short')!r}"
+
+        print("assets verified against the lock:", digest[:16], "...")
+        PY
+
+    - name: Pack assets artifact
+      if: ${{ inputs.artifact-name != '' }}
+      shell: bash
+      run: |
+        set -euxo pipefail
+        tar -czf "$RUNNER_TEMP/komari-assets.tar.gz" -C web/public defaultTheme bundledTheme
+
+    - name: Upload assets artifact
+      if: ${{ inputs.artifact-name != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/komari-assets.tar.gz
+        if-no-files-found: error
