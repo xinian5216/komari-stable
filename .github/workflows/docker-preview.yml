@@ -137,3 +137,59 @@ jobs:
           for i in $(seq 1 45); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
           curl -sf "http://127.0.0.1:${PORT}/" -o /tmp/docker-index2.html -w 'GET / after restart -> %{http_code}\n'
           cmp -s /tmp/docker-index.html /tmp/docker-index2.html && echo "OK: theme unchanged after restart"
+
+  # linux/arm64 只做"运行态最小冒烟"：QEMU 下能起容器、能完成安装向导、
+  # 随包主题确实落在 data/theme/next 且被采用。RPC / WebSocket / 私有站点已在 amd64 E2E 覆盖，这里不重复。
+  # 若任务在 "Set up QEMU" 这一步失败，那是基础设施问题（binfmt/QEMU 不可用），与产品无关。
+  docker-arm64-smoke:
+    needs: build-docker-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: komari-linux-arm64
+          path: .
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build linux/arm64 image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          platforms: linux/arm64
+          tags: komari-stable:preview-arm64
+      - name: "arm64 minimal smoke: install wizard -> bundled theme"
+        run: |
+          set -euxo pipefail
+          PORT=25881
+          docker volume create komari-arm64-data >/dev/null
+          docker run -d --name komari-arm64 --platform linux/arm64 -p ${PORT}:${PORT} \
+            -v komari-arm64-data:/app/data komari-stable:preview-arm64 \
+            /app/komari server -l 0.0.0.0:${PORT} >/dev/null
+          trap 'docker logs komari-arm64 | tail -30 || true; docker rm -f komari-arm64 >/dev/null 2>&1 || true; docker volume rm komari-arm64-data >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 60); do curl -sf "http://127.0.0.1:${PORT}/api/install/status" >/dev/null && break; sleep 2; done
+          curl -s -o /dev/null -w 'install http=%{http_code}\n' -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"arm64admin","password":"Arm64Admin#2026","sitename":"arm64 Smoke","description":"","metric_dsn":"./data/metrics.db"}'
+          for i in $(seq 1 60); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
+          sleep 2
+
+          echo "--- data/theme/next/komari-theme.json ---"
+          docker exec komari-arm64 sh -lc 'cat /app/data/theme/next/komari-theme.json' | python3 -c "import json,sys;m=json.load(sys.stdin);print('manifest:',m['short'],m['version'],m['author'],m['url']);assert m['short']=='next';assert 'xinian5216/komari-next-stable' in m['url']"
+
+          echo "--- theme setting read back through the admin API ---"
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/login" -H 'Content-Type: application/json' \
+            -d '{"username":"arm64admin","password":"Arm64Admin#2026"}' -o /tmp/arm64-login.json -w 'login http=%{http_code}\n'
+          TOKEN=$(python3 -c "import json;print(json.load(open('/tmp/arm64-login.json'))['data']['set-cookie']['session_token'])")
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' -H "Cookie: session_token=${TOKEN}" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"admin:getSettings","params":{}}' -o /tmp/arm64-settings.json
+          python3 -c "import json;s=json.load(open('/tmp/arm64-settings.json'))['result'];print('theme =',s.get('theme'));assert s.get('theme')=='next'"
+
+          curl -sf "http://127.0.0.1:${PORT}/" -o /tmp/arm64-index.html -w 'GET / -> %{http_code}\n'
+          grep -qE "__next|_next/" /tmp/arm64-index.html || { echo "FAIL: / must be served by the bundled theme"; exit 1; }
+          if grep -q "entry-index-" /tmp/arm64-index.html; then echo "FAIL: / served the embedded default"; exit 1; fi
+          curl -sf "http://127.0.0.1:${PORT}/admin" -o /tmp/arm64-admin.html -w 'GET /admin -> %{http_code}\n'
+          grep -q "entry-index-" /tmp/arm64-admin.html || { echo "FAIL: /admin must stay on the embedded default"; exit 1; }
+          echo "OK: arm64 container serves the bundled Komari Next theme"
