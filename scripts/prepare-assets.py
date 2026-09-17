@@ -81,9 +81,29 @@ def save_provenance(entry: str, payload: dict) -> None:
     PROVENANCE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def resolve_tool(name: str) -> str:
+    """Locate an external tool.
+
+    Never invoke a bare name on Windows: npm/tar/zstd are .cmd/.exe shims there and
+    CreateProcess would fail with a raw FileNotFoundError traceback.
+    """
+    found = shutil.which(name)
+    if not found:
+        raise SystemExit(
+            f"FAIL: '{name}' is required but was not found on PATH. Install it and retry."
+        )
+    return found
+
+
 def run(cmd: list[str], cwd: Path | None = None) -> None:
+    cmd = list(cmd)
+    if os.path.sep not in cmd[0] and (not os.path.altsep or os.path.altsep not in cmd[0]):
+        cmd[0] = resolve_tool(cmd[0])
     log("$ " + " ".join(cmd))
-    result = subprocess.run(cmd, cwd=cwd)
+    try:
+        result = subprocess.run(cmd, cwd=cwd)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"FAIL: cannot execute {cmd[0]!r}: {exc}") from exc
     if result.returncode != 0:
         raise SystemExit(f"FAIL: command failed with exit code {result.returncode}: {' '.join(cmd)}")
 
