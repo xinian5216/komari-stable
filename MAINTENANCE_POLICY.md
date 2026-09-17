@@ -38,6 +38,21 @@
   嵌入式核心前端仍为 `xinian5216/komari-web-stable`（`/admin`、`/terminal`、recovery/restricted 与 fallback），
   既有实例升级后 `theme` 配置与 `data/theme/*` 完全不变。
 
+## 2.2 发布产物不可变（immutability）
+
+一次成功发布的产物是**不可变**的，该规则由 `scripts/release-guard.sh` 在 `stable-release.yml` 中强制执行，
+并由 `scripts/tests/test-release-guard.sh`（在 `stable-ci` 中运行）自测：
+
+| 对象 | 规则 |
+| --- | --- |
+| 正式 Release 资产（各平台二进制、`SHA256SUMS`） | 已存在且**字节完全一致** → 视为完成并跳过；字节不同 → 立即 FAIL（`immutable release asset mismatch`）。**永不覆盖**，也不通过"删除旧资产再上传"绕过。 |
+| 固定版本镜像 tag（`ghcr.io/xinian5216/komari-stable:v1.5.0-stable.N`） | tag 已存在 → 直接 FAIL；一经发布不得指向新的 digest。 |
+| 浮动镜像 tag（`...:stable`） | 允许随最新正式 Release 更新。 |
+| `workflow_dispatch` | 只能**补齐缺失资产**；不提供"覆盖重发"的能力。 |
+
+已公开的产物若确实有问题：**发布下一个版本**（例如 `v1.5.0-stable.2`），不要重写已发布的 tag 或资产。
+守卫本身只读不写旧产物：它不会删除任何资产或 tag。
+
 ## 3. 禁止进入 `stable` 的改动（除非维护者明确决策并记录）
 
 - 全项目格式化、批量重命名、目录大规模调整；
