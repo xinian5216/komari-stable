@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	"github.com/komari-monitor/komari/internal/bundledtheme"
 	appconfig "github.com/komari-monitor/komari/internal/config"
 	"github.com/komari-monitor/komari/internal/metricstore"
+	"github.com/komari-monitor/komari/internal/themebundle"
 	logger "github.com/komari-monitor/komari/utils/log"
 	"github.com/komari-monitor/komari/web/api"
 	"github.com/komari-monitor/komari/web/backup"
@@ -171,25 +173,36 @@ func (c *Controller) fail() {
 // no startup stage, upgrade or migration path touches bundled themes.
 var seedPreferredTheme = bundledtheme.Seed
 
+// setManySettings is appconfig.SetMany, swappable in tests so the rollback path of
+// a failed settings write can be exercised without breaking the test database.
+var setManySettings = appconfig.SetMany
+
 // applyBundledThemeForFreshInstall seeds the bundled preferred theme into
-// data/theme/<short> and, only when that succeeded, records the theme setting for
-// this brand new instance. It returns a warning string instead of an error on
-// purpose: a missing or broken bundled theme must never fail an installation -the
-// instance simply keeps the built-in default because the theme key stays absent.
+// data/theme/<short> and records the theme setting for this brand new instance.
+// It returns the seed result plus a warning string: a missing or broken bundled
+// theme must never fail an installation - the instance simply keeps the built-in
+// default because the theme key stays absent. The result is handed back to the
+// caller so a failed settings write can roll back exactly the directory this
+// installation created (nothing else).
 //
 // This is the only place in the server that seeds a bundled theme. Startup,
 // upgrade and migration paths deliberately do not call it, so existing instances
 // keep their theme configuration and their data/theme directories untouched.
-func applyBundledThemeForFreshInstall(settings map[string]any) string {
+func applyBundledThemeForFreshInstall(settings map[string]any) (themebundle.Result, string) {
 	result, err := seedPreferredTheme()
 	if err != nil {
-		return fmt.Sprintf("bundled preferred theme not seeded: %v; this instance keeps the default theme", err)
+		return themebundle.Result{}, fmt.Sprintf("bundled preferred theme not seeded: %v; this instance keeps the default theme", err)
 	}
 	if result.Skipped {
-		return fmt.Sprintf("bundled preferred theme already present at %s; leaving the theme setting untouched", result.Path)
+		// The directory was already there before this installation started, so this
+		// call never touched it. Adopt it only if it is a usable theme package;
+		// otherwise leave the instance on the default theme.
+		if _, err := themebundle.LoadManifest(filepath.Join(result.Path, themebundle.ManifestName)); err != nil {
+			return result, fmt.Sprintf("bundled preferred theme directory %s is not a usable theme package (%v); this instance keeps the default theme", result.Path, err)
+		}
 	}
 	settings[appconfig.ThemeKey] = result.Short
-	return ""
+	return result, ""
 }
 
 func (c *Controller) createAccountAndSettings(request *completeRequest, cfg *metricstore.MetricStoreConfig) error {
@@ -211,14 +224,25 @@ func (c *Controller) createAccountAndSettings(request *completeRequest, cfg *met
 		metricstore.MetricDBDSNKey:    cfg.DSN,
 	}
 
-	if warning := applyBundledThemeForFreshInstall(settings); warning != "" {
+	seedResult, warning := applyBundledThemeForFreshInstall(settings)
+	if warning != "" {
 		logger.Warnf("install", "%s", warning)
-	} else if theme, ok := settings[appconfig.ThemeKey]; ok {
-		logger.Infof("install", "bundled preferred theme seeded as %v", theme)
+	} else {
+		logger.Infof("install", "bundled preferred theme ready at %s (theme=%v)", seedResult.Path, settings[appconfig.ThemeKey])
 	}
 
-	if err := appconfig.SetMany(settings); err != nil {
+	if err := setManySettings(settings); err != nil {
+		// Roll back this installation so a retry starts from a clean state: drop the
+		// account first, then the theme directory this run seeded (if any). The
+		// theme rollback refuses to touch a pre-existing data/theme/<short>.
 		_ = accounts.DeleteAccountByUsernameWithDB(c.db, user.Username)
+		if seedResult.Created {
+			if rollbackErr := seedResult.Rollback(); rollbackErr != nil {
+				logger.Errorf("install", "could not roll back the bundled theme at %s: %v", seedResult.Path, rollbackErr)
+			} else {
+				logger.Warnf("install", "rolled back the bundled theme at %s because the settings write failed", seedResult.Path)
+			}
+		}
 		return err
 	}
 	return nil

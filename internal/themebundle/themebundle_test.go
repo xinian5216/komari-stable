@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,6 +259,110 @@ func TestExtractRefusesTraversalEvenWithoutInspect(t *testing.T) {
 	payload := buildZip(t, []zipEntry{{name: "../evil.txt", body: "x"}})
 	if err := Extract(payload, t.TempDir()); err == nil {
 		t.Fatal("Extract must refuse traversal entries on its own")
+	}
+}
+
+// Seed must tell the caller whether it created the directory or left an existing one
+// alone, so a failed later step can roll back exactly what it created.
+func TestSeedReportsCreatedThenSkipped(t *testing.T) {
+	zipBytes := buildZip(t, validEntries(t, nil))
+	root := t.TempDir()
+
+	first, err := Seed(zipBytes, sha256Hex(zipBytes), root)
+	if err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	if !first.Created || first.Skipped {
+		t.Fatalf("first seed must report Created, got Created=%v Skipped=%v", first.Created, first.Skipped)
+	}
+	if first.Short != "next" || first.Path != filepath.Join(root, "next") {
+		t.Fatalf("unexpected result %+v", first)
+	}
+
+	second, err := Seed(zipBytes, sha256Hex(zipBytes), root)
+	if err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	if second.Created || !second.Skipped {
+		t.Fatalf("second seed must report Skipped, got Created=%v Skipped=%v", second.Created, second.Skipped)
+	}
+}
+
+// Rollback removes the directory a seed created and is a no-op for a theme that was
+// already there before the seed ran.
+func TestRollbackRemovesOnlyDirectoriesSeedCreated(t *testing.T) {
+	zipBytes := buildZip(t, validEntries(t, nil))
+	root := t.TempDir()
+
+	created, err := Seed(zipBytes, sha256Hex(zipBytes), root)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := created.Rollback(); err != nil {
+		t.Fatalf("rollback of a created theme: %v", err)
+	}
+	if _, err := os.Stat(created.Path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("rollback must remove %s (err=%v)", created.Path, err)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+		t.Fatalf("themes root must be empty again, got %v (err=%v)", entries, err)
+	}
+
+	// A second installation that finds a pre-existing theme must leave it alone.
+	sentinel := filepath.Join(root, "next", "dist", "index.html")
+	if _, err := Seed(zipBytes, sha256Hex(zipBytes), root); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+	before, err := os.ReadFile(sentinel)
+	if err != nil {
+		t.Fatalf("read sentinel: %v", err)
+	}
+	skipped, err := Seed(zipBytes, sha256Hex(zipBytes), root)
+	if err != nil || !skipped.Skipped {
+		t.Fatalf("expected a skipped seed, got %+v (err=%v)", skipped, err)
+	}
+	if err := skipped.Rollback(); err != nil {
+		t.Fatalf("rollback of a skipped seed must be a no-op, got %v", err)
+	}
+	after, err := os.ReadFile(sentinel)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("a skipped theme must survive a rollback unchanged (err=%v)", err)
+	}
+}
+
+// Rollback never deletes on a guess: it checks the layout and the manifest on disk.
+func TestRollbackRefusesForeignDirectories(t *testing.T) {
+	root := t.TempDir()
+
+	// (a) the directory no longer holds the theme it claims
+	foreign := filepath.Join(root, "next")
+	if err := os.MkdirAll(foreign, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(foreign, ManifestName), []byte(`{"name":"Other","short":"other","version":"1.0.0","author":"x","url":"https://example.invalid"}`), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	result := Result{Short: "next", Path: foreign, Created: true}
+	if err := result.Rollback(); err == nil {
+		t.Fatal("rollback must refuse a directory whose manifest describes another theme")
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatalf("refused rollback must leave the directory alone: %v", err)
+	}
+
+	// (b) the path does not have the expected <root>/<short> shape
+	mismatched := Result{Short: "next", Path: filepath.Join(root, "next", "nested"), Created: true}
+	if err := mismatched.Rollback(); err == nil {
+		t.Fatal("rollback must refuse a path that is not <themesRoot>/<short>")
+	}
+
+	// (c) a result that did not create anything is never rolled back
+	noop := Result{Short: "next", Path: foreign, Skipped: true}
+	if err := noop.Rollback(); err != nil {
+		t.Fatalf("rollback without Created must be a no-op, got %v", err)
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatalf("no-op rollback must not delete anything: %v", err)
 	}
 }
 

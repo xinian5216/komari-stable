@@ -59,9 +59,38 @@ type Result struct {
 	Short   string
 	Version string
 	Path    string
-	// Skipped is true when the target theme directory already existed, in which
-	// case nothing was written.
+	// Created is true when this call extracted the package and published
+	// Path itself. Only such a directory may be rolled back by the caller.
+	Created bool
+	// Skipped is true when the target theme directory already existed before
+	// this call, in which case nothing was written.
 	Skipped bool
+}
+
+// Rollback removes the theme directory this call created, and refuses to touch
+// anything else - the caller never has to guess paths:
+//   - it is a no-op unless Created is set (a pre-existing theme is never removed);
+//   - Path must still have the <themesRoot>/<short> shape;
+//   - the manifest on disk must still describe the same short, so a directory
+//     that was replaced in the meantime is left alone.
+func (r Result) Rollback() error {
+	if !r.Created || r.Path == "" || r.Short == "" {
+		return nil
+	}
+	if filepath.Base(filepath.Clean(r.Path)) != r.Short {
+		return fmt.Errorf("refusing to remove %q: not a <themesRoot>/%s directory", r.Path, r.Short)
+	}
+	onDisk, err := LoadManifest(filepath.Join(r.Path, ManifestName))
+	if err != nil {
+		return fmt.Errorf("refusing to remove %q: %w", r.Path, err)
+	}
+	if onDisk.Short != r.Short {
+		return fmt.Errorf("refusing to remove %q: manifest declares short %q, expected %q", r.Path, onDisk.Short, r.Short)
+	}
+	if err := os.RemoveAll(r.Path); err != nil {
+		return fmt.Errorf("remove %q: %w", r.Path, err)
+	}
+	return nil
 }
 
 // HashMatches reports whether zipBytes hashes to the expected hex digest.
@@ -298,7 +327,9 @@ func LoadManifest(path string) (*Manifest, error) {
 //     re-validated there, and only then renamed into place;
 //   - an existing themesRoot/<short> is never overwritten (Result.Skipped);
 //   - on any failure the temporary directory is removed, so a half-extracted
-//     theme is never left behind.
+//     theme is never left behind;
+//   - a directory created by this call is reported as Result.Created so the
+//     caller can roll it back if a later step of the same installation fails.
 func Seed(zipBytes []byte, expectedSHA256, themesRoot string) (Result, error) {
 	manifest, err := Inspect(zipBytes, expectedSHA256)
 	if err != nil {
@@ -347,7 +378,7 @@ func Seed(zipBytes []byte, expectedSHA256, themesRoot string) (Result, error) {
 		return Result{}, err
 	}
 	published = true
-	return Result{Short: manifest.Short, Version: manifest.Version, Path: target}, nil
+	return Result{Short: manifest.Short, Version: manifest.Version, Path: target, Created: true}, nil
 }
 
 // cleanupStaleTempDirs removes leftovers from an interrupted previous attempt.
