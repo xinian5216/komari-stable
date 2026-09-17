@@ -95,22 +95,40 @@ docker compose up -d
 ```
 
 **从官方镜像切换过来**（原先使用 `ghcr.io/komari-monitor/komari`）：两者数据都在容器内 `/app/data`，
-因此**复用原来的数据卷即可**，但必须先备份：
+因此**复用原来的挂载即可**，但必须先备份。下面同时覆盖 **named volume** 与 **bind mount**，
+并用"**重命名旧容器**"的方式保留回滚可能、同时避免容器名冲突。
 
 ```bash
-# 1) 备份（把 <卷名> 换成你原来的卷；bind mount 则直接打包宿主机目录）
+# 0) 先确认旧容器用的是哪种挂载（记下卷名或宿主机目录）
+docker inspect <旧容器名> --format '{{json .Mounts}}'
+#    named volume → 看 "Name"（例如 komari-data，也可能是你自己的命名，不要想当然）
+#    bind mount   → 看 "Source"（宿主机目录，例如 /srv/komari/data）
+
+# 1) 备份数据
+#    named volume（<卷名> 换成上一步看到的 Name）：
 docker run --rm -v <卷名>:/data -v "$(pwd)":/backup alpine \
   tar czf /backup/komari-data-$(date +%F).tar.gz -C /data .
+#    bind mount（<宿主机目录> 换成上一步看到的 Source）：
+sudo tar czf ./komari-data-$(date +%F).tar.gz -C <宿主机目录> .
 
-# 2) 停止旧容器（不要删除它，也不要删除数据卷）
+# 2) 停止旧容器后【重命名】它：既保留完整旧容器用于回滚，又释放 komari 这个名称
 docker stop <旧容器名>
+docker rename <旧容器名> komari-old-$(date +%F)
 
-# 3) 用同一数据卷启动 Komari Stable 镜像（先用固定版本 tag）
+# 3) 用原挂载创建新的 komari 容器（此时名称已空闲，不会 name conflict）
+#    named volume：
 docker run -d --name komari -p 25774:25774 -v <卷名>:/app/data \
   --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+#    bind mount（宿主目录与旧容器保持一致）：
+docker run -d --name komari -p 25774:25774 -v <宿主机目录>:/app/data \
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+
+# 4) 验证新实例：面板可登录、节点在线、历史数据完整
+# 5) 验证成功后再由你决定是否删除旧容器/旧镜像；本流程不自动删除任何容器或数据卷
 ```
 
-确认面板、节点与数据正常后，再自行决定是否清理旧容器/旧镜像。**脚本不会自动删除任何容器或数据卷。**
+如果确实需要回到旧镜像：`docker stop komari && docker rename komari komari-new-<失败日期> &&
+docker rename komari-old-<日期> komari && docker start komari`（旧容器与其挂载一直在，数据未动）。
 
 #### 4. 从官方 Server 原地迁移（原地升级，不重装）
 
@@ -170,8 +188,13 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 
 # Server（Docker）：
 docker compose pull && docker compose up -d
-#   或 docker run：先 docker pull 新 tag，再删除容器并用原数据卷重建（数据在卷里，不会丢）
-#   ⚠️ 不要删除数据卷（不要 docker volume rm，也不要给 docker run 加 -v 删除参数）
+#   或 docker run：先 docker pull 新 tag，重建容器时必须保持同一挂载
+#   （named volume 名或 bind mount 宿主机路径不变；必要时先 docker rename 旧容器以释放名称）
+#   ⚠️ 更新过程中禁止误删持久化数据，具体是：
+#      - 不要执行 `docker volume rm <卷名>`
+#      - 不要执行 `docker compose down -v`（-v 会删除 compose 声明的 named volume）
+#      - 不要把 bind mount 的宿主机目录当作临时目录清理
+#   （注：`docker run -v` 是挂载参数，本身不是删除操作）
 
 # Agent：自更新默认开启，无需手动操作；也可手动执行
 sudo bash migrate-komari-agent.sh -y
@@ -187,8 +210,11 @@ sudo systemctl start komari
 # 如需回到指定版本（例如重装某个固定版本）：
 sudo bash /tmp/install-komari.sh --migrate --yes --target-version v1.5.0-stable.0
 
-# Server（Docker）：把 image tag 改回旧固定版本，重建容器，继续使用原数据卷
-# （compose：修改 compose.yaml 的 image tag；docker run：用旧 tag 重新 run，参数不变）
+# Server（Docker）：把 image tag 改回旧固定版本，用原挂载重建容器
+# （compose：修改 compose.yaml 的 image tag 后 docker compose up -d；
+#  docker run：用旧 tag 重新 run，挂载/端口与原来一致；若名称被占用先 docker rename 旧容器）
+# 若上一轮迁移保留了旧容器：docker stop komari && docker rename komari komari-new-<日期> \
+#   && docker rename komari-old-<日期> komari && docker start komari
 
 # Agent：用备份二进制回滚
 sudo systemctl stop komari-agent
