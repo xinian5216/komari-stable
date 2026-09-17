@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/models"
+	"github.com/komari-monitor/komari/internal/bundledtheme"
 	appconfig "github.com/komari-monitor/komari/internal/config"
 	"github.com/komari-monitor/komari/internal/metricstore"
 	logger "github.com/komari-monitor/komari/utils/log"
@@ -164,6 +165,33 @@ func (c *Controller) fail() {
 	c.mu.Unlock()
 }
 
+// seedPreferredTheme installs the bundled preferred theme for a fresh instance.
+// It is a package variable so tests can exercise both the success and the failure
+// path without shipping a broken bundle. Only the installation wizard calls it:
+// no startup stage, upgrade or migration path touches bundled themes.
+var seedPreferredTheme = bundledtheme.Seed
+
+// applyBundledThemeForFreshInstall seeds the bundled preferred theme into
+// data/theme/<short> and, only when that succeeded, records the theme setting for
+// this brand new instance. It returns a warning string instead of an error on
+// purpose: a missing or broken bundled theme must never fail an installation -the
+// instance simply keeps the built-in default because the theme key stays absent.
+//
+// This is the only place in the server that seeds a bundled theme. Startup,
+// upgrade and migration paths deliberately do not call it, so existing instances
+// keep their theme configuration and their data/theme directories untouched.
+func applyBundledThemeForFreshInstall(settings map[string]any) string {
+	result, err := seedPreferredTheme()
+	if err != nil {
+		return fmt.Sprintf("bundled preferred theme not seeded: %v; this instance keeps the default theme", err)
+	}
+	if result.Skipped {
+		return fmt.Sprintf("bundled preferred theme already present at %s; leaving the theme setting untouched", result.Path)
+	}
+	settings[appconfig.ThemeKey] = result.Short
+	return ""
+}
+
 func (c *Controller) createAccountAndSettings(request *completeRequest, cfg *metricstore.MetricStoreConfig) error {
 	var count int64
 	if err := c.db.Model(&models.User{}).Count(&count).Error; err != nil {
@@ -182,6 +210,13 @@ func (c *Controller) createAccountAndSettings(request *completeRequest, cfg *met
 		metricstore.MetricDBDriverKey: cfg.Driver,
 		metricstore.MetricDBDSNKey:    cfg.DSN,
 	}
+
+	if warning := applyBundledThemeForFreshInstall(settings); warning != "" {
+		logger.Warnf("install", "%s", warning)
+	} else if theme, ok := settings[appconfig.ThemeKey]; ok {
+		logger.Infof("install", "bundled preferred theme seeded as %v", theme)
+	}
+
 	if err := appconfig.SetMany(settings); err != nil {
 		_ = accounts.DeleteAccountByUsernameWithDB(c.db, user.Username)
 		return err
