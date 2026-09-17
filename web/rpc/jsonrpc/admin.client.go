@@ -5,6 +5,7 @@ import (
 
 	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/database/clients"
+	"github.com/komari-monitor/komari/database/models"
 	"github.com/komari-monitor/komari/internal/metricstore"
 	"github.com/komari-monitor/komari/database/records"
 	"github.com/komari-monitor/komari/pkg/rpc"
@@ -150,6 +151,7 @@ func adminGetClient(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonR
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}
+	attachReportedCapabilities(&result)
 	return result, nil
 }
 
@@ -158,7 +160,26 @@ func adminListClients(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonR
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}
+	for i := range cls {
+		attachReportedCapabilities(&cls[i])
+	}
 	return cls, nil
+}
+
+// attachReportedCapabilities copies what an agent reported about its remote
+// control capabilities onto the client model. Clients that never reported keep
+// the fields empty, which the panel reads as "unknown" and treats like before.
+func attachReportedCapabilities(client *models.Client) {
+	if client == nil {
+		return
+	}
+	capabilities, privilegeLevel, reported := agent_runtime.ClientCapabilities(client.UUID)
+	if !reported {
+		return
+	}
+	client.Capabilities = capabilities
+	client.PrivilegeLevel = privilegeLevel
+	client.RemoteControlKnown = true
 }
 
 func adminGetClientToken(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

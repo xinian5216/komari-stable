@@ -42,6 +42,16 @@ type Client struct {
 	TrafficLimitType string     `json:"traffic_limit_type" gorm:"type:varchar(10);default:'max'"` // 流量阈值类型：sum max min up down
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+
+	// Runtime-only fields: what the agent reported about its remote control
+	// capabilities. They are never persisted, so the database schema and the
+	// stored data stay unchanged.
+	Capabilities   []string `json:"capabilities,omitempty" gorm:"-"`
+	PrivilegeLevel string   `json:"privilege_level,omitempty" gorm:"-"`
+	// RemoteControlKnown is true when the agent reported capabilities. Panels
+	// use it to distinguish "remote control disabled" from "older agent that
+	// reported nothing".
+	RemoteControlKnown bool `json:"remote_control_known,omitempty" gorm:"-"`
 }
 
 // User represents an authenticated user
