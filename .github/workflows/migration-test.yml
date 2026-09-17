@@ -104,8 +104,17 @@ jobs:
           done
           pid_file="$state_dir/${unit}.pid"
           is_running() {
-            [ -s "$pid_file" ] || return 1
-            pid=$(cat "$pid_file")
+            if [ -s "$pid_file" ]; then
+              pid=$(cat "$pid_file")
+              kill -0 "$pid" 2>/dev/null && return 0
+            fi
+            # 安装向导完成后官方 1.4.3 会自重启并更换 PID；按单元的
+            # ExecStart 可执行文件重新发现真实进程，不能依赖旧 PID 或伪 active 标记。
+            exe=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "/etc/systemd/system/$unit" | head -1)
+            [ -n "$exe" ] || return 1
+            pid=$(ps -eo pid=,args= | awk -v target="$exe" '$2 == target {print $1; exit}')
+            [ -n "$pid" ] || return 1
+            printf '%s\n' "$pid" > "$pid_file"
             kill -0 "$pid" 2>/dev/null
           }
           case "$cmd" in
