@@ -1,0 +1,369 @@
+name: Bundled theme test (fresh install / seed failures / upgrades)
+
+# 三轮门禁，全部针对"随包首选主题（Komari Next）"：
+#   1. fresh-install  —— 全新安装：theme=next、data/theme/next 完整、/ 来自 Next、
+#                        /admin 与 /terminal 仍来自嵌入式 default，API/WS/登录/私有站点/SPA/favicon 正常
+#   2. seed-failures  —— 哈希错 / 非法 zip / manifest 错：安装仍成功、theme=default、不生成 data/theme/next
+#   3. upgrade-matrix —— 存量实例（theme=default / next / custom）升级：配置与主题目录逐项不变
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "internal/themebundle/**"
+      - "internal/bundledtheme/**"
+      - "web/install/**"
+      - "web/public/bundled.go"
+      - "web/api/admin/theme.go"
+      - "bundled-themes.lock.json"
+      - "scripts/prepare-assets.py"
+      - ".github/workflows/bundled-theme-test.yml"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.25.x"
+  PORT: "25774"
+  BASELINE_TAG: v1.5.0-stable.0
+
+jobs:
+  fresh-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install zstd and sqlite3
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd sqlite3
+
+      - name: Prepare build assets (lock-driven)
+        run: python3 scripts/prepare-assets.py all
+
+      - name: Build the server
+        run: |
+          set -euxo pipefail
+          CGO_ENABLED=1 go build -trimpath -o /tmp/komari .
+
+      - name: Fresh install (install guide -> complete)
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/instance && mkdir -p /tmp/instance
+          cd /tmp/instance
+          (nohup /tmp/komari server -l 0.0.0.0:${PORT} > server.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:${PORT}/api/install/status" >/dev/null && break; sleep 2; done
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"e2eadmin","password":"E2eAdmin#2026","sitename":"Bundled Theme E2E","description":"","metric_dsn":"./data/metrics.db"}' \
+            -w ' install http=%{http_code}\n'
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
+
+      - name: "Assert: theme=next, seeded files, no leftovers"
+        run: |
+          set -euxo pipefail
+          cd /tmp/instance
+          echo "--- configs.theme ---"
+          sqlite3 data/komari.db "select value from configs where key='theme';" | tee /tmp/theme.txt
+          grep -q '"next"' /tmp/theme.txt
+          echo "--- data/theme/next ---"
+          test -f data/theme/next/komari-theme.json
+          test -f data/theme/next/dist/index.html
+          python3 - <<'PY'
+          import json, pathlib
+          manifest = json.loads(pathlib.Path("data/theme/next/komari-theme.json").read_text(encoding="utf-8"))
+          assert manifest["short"] == "next", manifest
+          assert "xinian5216/komari-next-stable" in manifest["url"], manifest
+          assert manifest["author"], manifest
+          print("manifest ok:", manifest["short"], manifest["version"], manifest["url"])
+          PY
+          if find data/theme -maxdepth 1 -name '.tmp-themebundle-*' -print -quit | grep -q .; then
+            echo "FAIL: temp directory left behind"; exit 1
+          fi
+          echo "OK: no temp leftovers"
+
+      - name: "Assert: / comes from Komari Next"
+        run: |
+          set -euxo pipefail
+          curl -sf "http://127.0.0.1:${PORT}/" -o /tmp/index.html -w 'GET / -> %{http_code} bytes=%{size_download}\n'
+          if ! grep -qE "__next|_next/" /tmp/index.html; then echo "FAIL: / is not the bundled Next theme"; exit 1; fi
+          if grep -q "entry-index-" /tmp/index.html; then echo "FAIL: / served the embedded default"; exit 1; fi
+          echo "OK: / served by the bundled Next theme"
+
+      - name: "Assert: /admin and /terminal still come from the embedded default"
+        run: |
+          set -euxo pipefail
+          for path in /admin /terminal /admin/settings; do
+            curl -sf "http://127.0.0.1:${PORT}${path}" -o /tmp/panel.html -w "GET ${path} -> %{http_code}\n"
+            if ! grep -q "entry-index-" /tmp/panel.html; then echo "FAIL: ${path} is not served by the embedded default"; exit 1; fi
+            if grep -qE "__next|_next/" /tmp/panel.html; then echo "FAIL: ${path} leaked the bundled theme"; exit 1; fi
+          done
+          echo "OK: admin/terminal keep the embedded core frontend"
+
+      - name: "Assert: theme assets, SPA refresh, favicon"
+        run: |
+          set -euxo pipefail
+          curl -sf "http://127.0.0.1:${PORT}/themes/next/dist/index.html" -o /tmp/theme-index.html -w 'GET /themes/next/dist/index.html -> %{http_code}\n'
+          grep -qE "__next|_next/" /tmp/theme-index.html
+          curl -sf "http://127.0.0.1:${PORT}/some/spa/route" -o /tmp/spa.html -w 'GET /some/spa/route -> %{http_code}\n'
+          cmp -s /tmp/spa.html /tmp/index.html && echo "OK: SPA route serves the theme index"
+          curl -sf -o /dev/null -w 'GET /favicon.ico -> %{http_code}\n' "http://127.0.0.1:${PORT}/favicon.ico"
+
+      - name: "Assert: login, RPC2, websocket, private site"
+        run: |
+          set -euxo pipefail
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/login" -H 'Content-Type: application/json' \
+            -d '{"username":"e2eadmin","password":"E2eAdmin#2026"}' -o /tmp/login.json -w 'login http=%{http_code}\n'
+          python3 - <<'PY'
+          import json, pathlib
+          token = json.load(open("/tmp/login.json"))["data"]["set-cookie"]["session_token"]
+          pathlib.Path("/tmp/session.txt").write_text(token)
+          print("session acquired")
+          PY
+
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' \
+            -H "Cookie: session_token=$(cat /tmp/session.txt)" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"admin:getSettings","params":{}}' -o /tmp/settings.json
+          python3 - <<'PY'
+          import json
+          payload = json.load(open("/tmp/settings.json"))
+          assert "result" in payload, payload
+          print("OK: admin:getSettings works over RPC2")
+          PY
+
+          python3 -m pip install --quiet --disable-pip-version-check websocket-client
+          python3 - <<'PY'
+          import json, os, websocket
+          port = os.environ["PORT"]
+          ws = websocket.create_connection(f"ws://127.0.0.1:{port}/api/clients", timeout=15)
+          ws.send("get")
+          message = json.loads(ws.recv())
+          payload = message.get("data") if isinstance(message.get("data"), dict) else message
+          print("OK: websocket responded, online =", payload.get("online"))
+          ws.close()
+          PY
+
+          echo "--- private site toggle ---"
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' \
+            -H "Cookie: session_token=$(cat /tmp/session.txt)" \
+            -d '{"jsonrpc":"2.0","id":2,"method":"admin:editSettings","params":{"private_site":true}}' -o /tmp/edit.json
+          python3 - <<'PY'
+          import json
+          payload = json.load(open("/tmp/edit.json"))
+          assert "result" in payload, payload
+          print("OK: private_site enabled")
+          PY
+          code=$(curl -s -o /tmp/nodes-private.json -w '%{http_code}' "http://127.0.0.1:${PORT}/api/nodes")
+          echo "anonymous /api/nodes with private site -> http=${code}"
+          python3 - <<'PY'
+          import json
+          payload = json.load(open("/tmp/nodes-private.json"))
+          data = payload.get("data") if isinstance(payload, dict) else payload
+          if data:
+              raise SystemExit(f"FAIL: private site must hide nodes from anonymous callers, got {str(data)[:120]}")
+          print("OK: private site hides nodes from anonymous callers")
+          PY
+          curl -s -X POST "http://127.0.0.1:${PORT}/api/rpc2" -H 'Content-Type: application/json' \
+            -H "Cookie: session_token=$(cat /tmp/session.txt)" \
+            -d '{"jsonrpc":"2.0","id":3,"method":"admin:editSettings","params":{"private_site":false}}' -o /dev/null
+          echo "OK: private site restored"
+
+      - name: Server log tail
+        if: always()
+        run: tail -20 /tmp/instance/server.log || true
+
+  seed-failures:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: hash-mismatch
+            prepare: "python3 scripts/prepare-assets.py theme --force --theme-zip /tmp/fixtures/valid.zip --theme-sha256 0000000000000000000000000000000000000000000000000000000000000000"
+          - case: invalid-zip
+            prepare: "python3 scripts/prepare-assets.py theme --force --theme-zip /tmp/fixtures/garbage.bin"
+          - case: bad-manifest
+            prepare: "python3 scripts/prepare-assets.py theme --force --theme-zip /tmp/fixtures/bad-manifest.zip"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install zstd and sqlite3
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd sqlite3
+
+      - name: Build the embedded frontend (valid) and tampered-bundle fixtures
+        run: |
+          set -euxo pipefail
+          python3 scripts/prepare-assets.py frontend
+          mkdir -p /tmp/fixtures
+          python3 - <<'PY'
+          import io, json, pathlib, urllib.request, zipfile
+          lock = json.load(open("bundled-themes.lock.json", encoding="utf-8"))["assets"]["bundled_preferred_theme"]
+          pathlib.Path("/tmp/fixtures/valid.zip").write_bytes(urllib.request.urlopen(lock["asset_url"], timeout=120).read())
+          pathlib.Path("/tmp/fixtures/garbage.bin").write_bytes(b"this is not a zip archive at all")
+          buffer = io.BytesIO()
+          with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+              archive.writestr("komari-theme.json", json.dumps({"name": "Broken", "short": "next", "author": "x", "url": "https://example.invalid"}))
+              archive.writestr("dist/index.html", "<html>broken</html>")
+          pathlib.Path("/tmp/fixtures/bad-manifest.zip").write_bytes(buffer.getvalue())
+          print("fixtures ready")
+          PY
+
+      - name: Prepare assets for case ${{ matrix.case }}
+        run: ${{ matrix.prepare }}
+
+      - name: Build the server
+        run: |
+          set -euxo pipefail
+          CGO_ENABLED=1 go build -trimpath -o /tmp/komari .
+
+      - name: "Assert: install still succeeds and theme stays default"
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/instance && mkdir -p /tmp/instance
+          cd /tmp/instance
+          (nohup /tmp/komari server -l 0.0.0.0:${PORT} > server.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:${PORT}/api/install/status" >/dev/null && break; sleep 2; done
+          code=$(curl -s -o /tmp/complete.json -w '%{http_code}' -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"e2eadmin","password":"E2eAdmin#2026","sitename":"Bundled Theme E2E","description":"","metric_dsn":"./data/metrics.db"}')
+          echo "install http=${code}"
+          [ "$code" = "200" ] || { echo "FAIL: installation must succeed even when the bundled theme is broken"; exit 1; }
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
+
+          value=$(sqlite3 data/komari.db "select value from configs where key='theme';")
+          echo "configs.theme='${value}'"
+          [ -z "$value" ] || { echo "FAIL: theme must stay unset when the seed fails"; exit 1; }
+
+          [ ! -e data/theme/next ] || { echo "FAIL: a failed seed must not leave data/theme/next"; exit 1; }
+          if find data/theme -maxdepth 1 -name '.tmp-themebundle-*' -print -quit | grep -q .; then
+            echo "FAIL: temp directory left behind"; exit 1
+          fi
+
+          curl -sf "http://127.0.0.1:${PORT}/" -o /tmp/index.html -w 'GET / -> %{http_code}\n'
+          grep -q "entry-index-" /tmp/index.html || { echo "FAIL: / must fall back to the embedded default theme"; exit 1; }
+          echo "OK: fallback to the embedded default works"
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-failure-${{ matrix.case }}-server-log
+          path: /tmp/instance/server.log
+          if-no-files-found: ignore
+
+  upgrade-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: theme-default
+          - case: theme-next
+          - case: theme-custom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install zstd and sqlite3
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd sqlite3
+
+      - name: Prepare assets and build both binaries
+        run: |
+          set -euxo pipefail
+          python3 scripts/prepare-assets.py all
+          CGO_ENABLED=1 go build -trimpath -o /tmp/komari-new .
+          git worktree add /tmp/baseline "${BASELINE_TAG}" >/dev/null
+          rm -rf /tmp/baseline/web/public/defaultTheme
+          mkdir -p /tmp/baseline/web/public/defaultTheme
+          cp -r web/public/defaultTheme/. /tmp/baseline/web/public/defaultTheme/
+          ( cd /tmp/baseline && CGO_ENABLED=1 go build -trimpath -o /tmp/komari-baseline . )
+
+      - name: Build an existing instance with the baseline binary
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/instance && mkdir -p /tmp/instance
+          cd /tmp/instance
+          (nohup /tmp/komari-baseline server -l 0.0.0.0:${PORT} > baseline.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:${PORT}/api/install/status" >/dev/null && break; sleep 2; done
+          curl -s -o /dev/null -w 'baseline install http=%{http_code}\n' -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"e2eadmin","password":"E2eAdmin#2026","sitename":"Existing","description":"","metric_dsn":"./data/metrics.db"}'
+          pkill -f komari-baseline || true
+          sleep 2
+
+          echo "--- preparing case ${{ matrix.case }} ---"
+          case "${{ matrix.case }}" in
+            theme-default)
+              sqlite3 data/komari.db "insert into configs(key,value) values('theme','\"default\"') on conflict(key) do update set value='\"default\"';"
+              ;;
+            theme-next)
+              mkdir -p data/theme/next/dist
+              printf '{"name":"Komari Next","short":"next","version":"1.4.19","author":"tonyliuzj","url":"https://github.com/xinian5216/komari-next-stable"}' > data/theme/next/komari-theme.json
+              printf '<html>next</html>' > data/theme/next/dist/index.html
+              sqlite3 data/komari.db "insert into configs(key,value) values('theme','\"next\"') on conflict(key) do update set value='\"next\"';"
+              ;;
+            theme-custom)
+              mkdir -p data/theme/custom/dist
+              printf '{"name":"Custom","short":"custom","version":"1.0.0","author":"ops","url":"https://example.invalid"}' > data/theme/custom/komari-theme.json
+              printf '<html>custom</html>' > data/theme/custom/dist/index.html
+              sqlite3 data/komari.db "insert into configs(key,value) values('theme','\"custom\"') on conflict(key) do update set value='\"custom\"';"
+              ;;
+          esac
+          sqlite3 data/komari.db "select key,value from configs where key='theme';" | tee /tmp/theme-before.txt
+          ( cd data/theme && find . -type f | sort | xargs sha256sum ) > /tmp/theme-tree-before.txt
+          wc -l /tmp/theme-tree-before.txt
+
+      - name: Upgrade to the new binary
+        run: |
+          set -euxo pipefail
+          cd /tmp/instance
+          (nohup /tmp/komari-new server -l 0.0.0.0:${PORT} > upgrade.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
+          sleep 3
+          sqlite3 data/komari.db "select key,value from configs where key='theme';" | tee /tmp/theme-after.txt
+          ( cd data/theme && find . -type f | sort | xargs sha256sum ) > /tmp/theme-tree-after.txt
+          wc -l /tmp/theme-tree-after.txt
+
+      - name: "Assert: nothing about themes changed"
+        run: |
+          set -euxo pipefail
+          diff -u /tmp/theme-before.txt /tmp/theme-after.txt && echo "OK: theme config unchanged"
+          diff -u /tmp/theme-tree-before.txt /tmp/theme-tree-after.txt && echo "OK: theme directories byte-identical"
+          case "${{ matrix.case }}" in
+            theme-default|theme-custom)
+              [ ! -e /tmp/instance/data/theme/next ] || { echo "FAIL: upgrade must not seed data/theme/next"; exit 1; }
+              echo "OK: no data/theme/next created";;
+            theme-next)
+              [ -f /tmp/instance/data/theme/next/komari-theme.json ] || { echo "FAIL: existing next theme vanished"; exit 1; }
+              echo "OK: existing next theme untouched";;
+          esac
+          curl -sf -o /dev/null -w 'GET / -> %{http_code}\n' "http://127.0.0.1:${PORT}/"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-${{ matrix.case }}-logs
+          path: |
+            /tmp/instance/baseline.log
+            /tmp/instance/upgrade.log
+          if-no-files-found: ignore
