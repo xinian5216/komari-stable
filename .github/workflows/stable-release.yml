@@ -130,9 +130,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # 需要仓库内容：上传前用 scripts/release-guard.sh 校验（保持不可变语义）。
+      # 取"触发本次运行的 ref"而不是 tag：发布事件时两者相同（首个运行的脚本就是 tag 里的那份），
+      # 而补缺重跑时用的是分支上更新过的工具脚本（tag 内容不可变，本就无法更新）。
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.event.release.tag_name || github.ref_name }}
       - uses: actions/download-artifact@v4
         with:
           pattern: komari-*
