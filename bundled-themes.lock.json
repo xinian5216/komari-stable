@@ -5,8 +5,8 @@
     "embedded_default_frontend": {
       "role": "embedded core frontend: admin panel, terminal, recovery/restricted pages and the fallback theme",
       "repository": "xinian5216/komari-web-stable",
-      "tag": "v1.5.0-stable.0",
-      "commit": "c9d474950272b9a10cc6fbd038946fcfc20b0100",
+      "tag": "v1.5.0-stable.1",
+      "commit": "b69e706a147887c96290068e9f1bad9ebe37fe55",
       "build": {
         "node_version": "23",
         "install": "npm ci",
