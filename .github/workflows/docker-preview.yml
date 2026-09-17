@@ -85,6 +85,14 @@ jobs:
         run: ls -la komari-linux-*
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      - name: Build amd64 image for a runtime check (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          platforms: linux/amd64
+          tags: komari-stable:preview-amd64
       - name: Build multi-arch image (no push)
         uses: docker/build-push-action@v5
         with:
@@ -92,3 +100,39 @@ jobs:
           push: false
           platforms: linux/amd64,linux/arm64
           tags: komari-stable:preview-${{ github.sha }}
+
+      # Docker 部署方式下的行为门禁：全新安装应默认使用随包内嵌的 Komari Next，
+      # 且管理后台仍由嵌入式核心前端提供。数据目录挂在具名 volume 上。
+      - name: First-run Docker smoke (fresh install -> bundled theme)
+        run: |
+          set -euxo pipefail
+          PORT=25880
+          docker volume create komari-preview-data >/dev/null
+          docker run -d --name komari-preview -p ${PORT}:${PORT} -v komari-preview-data:/app/data \
+            komari-stable:preview-amd64 server -l 0.0.0.0:${PORT} >/dev/null
+          trap 'docker logs komari-preview | tail -40 || true; docker rm -f komari-preview >/dev/null 2>&1 || true; docker volume rm komari-preview-data >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 45); do curl -sf "http://127.0.0.1:${PORT}/api/install/status" >/dev/null && break; sleep 2; done
+          curl -s -o /dev/null -w 'install http=%{http_code}\n' -X POST "http://127.0.0.1:${PORT}/api/install/complete" \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"dockeradmin","password":"DockerAdmin#2026","sitename":"Docker Smoke","description":"","metric_dsn":"./data/metrics.db"}'
+          for i in $(seq 1 45); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
+          sleep 2
+
+          echo "--- theme setting and seeded files (inside the container) ---"
+          docker exec komari-preview sh -lc 'ls -la /app/data/theme/next/komari-theme.json /app/data/theme/next/dist/index.html'
+          docker exec komari-preview sh -lc 'cat /app/data/theme/next/komari-theme.json' | python3 -c "import json,sys;m=json.load(sys.stdin);print('manifest:',m['short'],m['version'],m['author'],m['url']);assert m['short']=='next';assert 'xinian5216/komari-next-stable' in m['url']"
+
+          curl -sf "http://127.0.0.1:${PORT}/" -o /tmp/docker-index.html -w 'GET / -> %{http_code}\n'
+          grep -qE "__next|_next/" /tmp/docker-index.html || { echo "FAIL: / must be served by the bundled theme"; exit 1; }
+          if grep -q "entry-index-" /tmp/docker-index.html; then echo "FAIL: / served the embedded default"; exit 1; fi
+          curl -sf "http://127.0.0.1:${PORT}/admin" -o /tmp/docker-admin.html -w 'GET /admin -> %{http_code}\n'
+          grep -q "entry-index-" /tmp/docker-admin.html || { echo "FAIL: /admin must stay on the embedded default"; exit 1; }
+          if grep -qE "__next|_next/" /tmp/docker-admin.html; then echo "FAIL: /admin leaked the theme"; exit 1; fi
+          curl -sf -o /dev/null -w 'GET /favicon.ico -> %{http_code}\n' "http://127.0.0.1:${PORT}/favicon.ico"
+          echo "OK: Docker first-run uses the bundled Komari Next theme"
+
+          echo "--- restart must not touch the theme ---"
+          docker restart komari-preview >/dev/null
+          for i in $(seq 1 45); do curl -sf "http://127.0.0.1:${PORT}/api/version" >/dev/null && break; sleep 2; done
+          curl -sf "http://127.0.0.1:${PORT}/" -o /tmp/docker-index2.html -w 'GET / after restart -> %{http_code}\n'
+          cmp -s /tmp/docker-index.html /tmp/docker-index2.html && echo "OK: theme unchanged after restart"
