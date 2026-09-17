@@ -124,6 +124,9 @@ jobs:
 
   checksums:
     needs: build-and-attach-binaries
+    # 二进制作业在上传阶段失败（例如重跑时守卫拒绝覆盖）也要能把 SHA256SUMS 补齐：
+    # 只要三个产物凑齐（本次构建 或 已发布），本作业仍然完成它的职责。
+    if: ${{ always() && needs['build-and-attach-binaries'].result != 'cancelled' }}
     runs-on: ubuntu-latest
     steps:
       # 需要仓库内容：上传前用 scripts/release-guard.sh 校验（保持不可变语义）。
@@ -136,11 +139,28 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Generate SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
           cd dist
           rm -f SHA256SUMS
-          sha256sum komari-* > SHA256SUMS
+          # 已发布的资产是唯一事实来源：重跑时用"实际发布出去"的那一份，首次运行时用本次构建产物。
+          # 重建并不逐字节可复现，所以绝不能拿重建结果去描述已发布的二进制。
+          EXPECTED="komari-linux-amd64 komari-linux-arm64 komari-windows-amd64.exe"
+          for name in ${EXPECTED}; do
+            if gh release download "${RELEASE_TAG}" --repo "${{ github.repository }}" \
+                 --pattern "$name" --dir "${RUNNER_TEMP}/published" >/dev/null 2>&1; then
+              mv "${RUNNER_TEMP}/published/$name" "$name"
+              echo "SHA256SUMS: using the published ${name}"
+            elif [ -f "$name" ]; then
+              echo "SHA256SUMS: using the locally built ${name}"
+            else
+              echo "FAIL: neither a published asset nor a built artifact for ${name}"
+              exit 1
+            fi
+          done
+          sha256sum ${EXPECTED} > SHA256SUMS
           cat SHA256SUMS
       - name: "Upload SHA256SUMS to release (immutable - fill gaps only, never overwrite)"
         env:
@@ -148,6 +168,8 @@ jobs:
         run: |
           set -euxo pipefail
           PLAN="${RUNNER_TEMP}/assets-to-upload.txt"
+          # 先确认它描述的正是已发布的资产集合，再套用不可变规则。
+          bash scripts/release-guard.sh verify-sums "${{ github.repository }}" "${RELEASE_TAG}" dist/SHA256SUMS
           bash scripts/release-guard.sh assets "${{ github.repository }}" "${RELEASE_TAG}" "$PLAN" dist/SHA256SUMS
           if grep -qx "SHA256SUMS" "$PLAN"; then
             gh release upload "${RELEASE_TAG}" dist/SHA256SUMS --repo "${{ github.repository }}"

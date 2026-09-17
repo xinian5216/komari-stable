@@ -22,6 +22,13 @@
 #       A published asset is never overwritten: to fix a broken release, publish the
 #       next version (for example 1.5.0-stable.2).
 #
+#   release-guard.sh verify-sums <repo> <tag> <SHA256SUMS-file>
+#
+#       Fail unless every entry of <SHA256SUMS-file> matches the asset that is
+#       actually published on <tag>. A checksum file is only meaningful for the
+#       bytes that were really published, so it must be derived from the release -
+#       never from a rebuild, which is not byte-identical.
+#
 #   release-guard.sh image <fixed-ref> <liveness-ref>
 #
 #       Fail when the immutable image reference <fixed-ref> already exists in the
@@ -63,6 +70,7 @@ usage() {
 	cat >&2 <<'USAGE'
 usage:
   release-guard.sh assets <repo> <tag> <plan-file> <file>...
+  release-guard.sh verify-sums <repo> <tag> <SHA256SUMS-file>
   release-guard.sh image <fixed-ref> <liveness-ref>
 USAGE
 	exit 2
@@ -131,6 +139,60 @@ for asset in release.get("assets") or []:
 	fi
 }
 
+verify_sums() {
+	local repo="$1" tag="$2" file="$3"
+	[ -f "$file" ] || {
+		log "FAIL: ${file} is not a file"
+		exit 1
+	}
+
+	local release_json
+	if ! release_json="$("$GH_BIN" api "repos/${repo}/releases/tags/${tag}")"; then
+		log "FAIL: cannot read the release ${tag} in ${repo}"
+		exit 1
+	fi
+	local listing
+	listing="$(printf '%s' "$release_json" | "$(python_bin)" -c '
+import json, sys
+release = json.load(sys.stdin)
+for asset in release.get("assets") or []:
+    print("%s\t%s" % (asset.get("id"), asset.get("name")))
+')"
+
+	tmp_dir="$(mktemp -d)"
+	trap 'rm -rf "${tmp_dir:-}"' EXIT
+
+	local checked=0 failures=0 expected name id actual
+	while read -r expected name; do
+		[ -n "${name:-}" ] || continue
+		# coreutils on MSYS marks binary mode with a leading '*'; accept both forms.
+		name="${name#\*}"
+		id="$(printf '%s\n' "$listing" | awk -F'\t' -v n="$name" '$2 == n { print $1; exit }')"
+		if [ -z "$id" ]; then
+			log "FAIL: ${file} lists ${name}, which is not published on ${tag}"
+			failures=$((failures + 1))
+			continue
+		fi
+		"$GH_BIN" api -H "Accept: application/octet-stream" "/repos/${repo}/releases/assets/${id}" > "$tmp_dir/asset"
+		actual="$(sha256sum "$tmp_dir/asset" | awk '{print $1}')"
+		checked=$((checked + 1))
+		if [ "$actual" != "$expected" ]; then
+			log "FAIL: published ${name} on ${tag} hashes ${actual}, but ${file} claims ${expected}"
+			failures=$((failures + 1))
+		fi
+	done < "$file"
+
+	if [ "$failures" -ne 0 ]; then
+		log "FAIL: ${file} does not describe the published assets of ${tag}"
+		exit 1
+	fi
+	if [ "$checked" -eq 0 ]; then
+		log "FAIL: ${file} lists no assets"
+		exit 1
+	fi
+	log "OK: ${file} matches ${checked} published asset(s) of ${tag}"
+}
+
 image() {
 	local fixed="$1"
 	local liveness="${2:-}"
@@ -156,6 +218,7 @@ main() {
 	shift
 	case "$command" in
 	assets) [ "$#" -ge 3 ] || usage; assets "$@" ;;
+	verify-sums) [ "$#" -ge 3 ] || usage; verify_sums "$@" ;;
 	image) [ "$#" -ge 1 ] || usage; image "$@" ;;
 	*) usage ;;
 	esac

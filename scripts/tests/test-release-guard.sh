@@ -141,6 +141,25 @@ check "exit 0 when one asset is published and another is missing" \
 check "only the missing asset is planned" \
 	bash -c "grep -qx SHA256SUMS '${WORK}/plan.txt' && ! grep -qx komari-linux-amd64 '${WORK}/plan.txt'"
 
+echo "== verify-sums: a checksum file must describe the published bytes =="
+printf 'binary-amd64-payload\n' > "${DIST}/komari-linux-amd64"
+( cd "${DIST}" && sha256sum komari-linux-amd64 > SHA256SUMS.true )
+write_release_json "komari-linux-amd64" 555
+cp "${DIST}/komari-linux-amd64" "${STATE}/assets/555"
+check "exit 0 when the checksum file matches the published asset" \
+	bash "$GUARD" verify-sums "xinian5216/komari-stable" "v1.5.0-stable.1" "${DIST}/SHA256SUMS.true"
+
+printf 'checksums-for-a-different-build\n' > "${DIST}/SHA256SUMS.wrong"
+printf '%s  komari-linux-amd64\n' "0000000000000000000000000000000000000000000000000000000000000000" > "${DIST}/SHA256SUMS.wrong"
+check "exit non-zero when the checksum file disagrees with the published asset" \
+	bash -c "! bash '$GUARD' verify-sums xinian5216/komari-stable v1.5.0-stable.1 '${DIST}/SHA256SUMS.wrong'"
+check "the failure names the mismatch" \
+	bash -c "bash '$GUARD' verify-sums xinian5216/komari-stable v1.5.0-stable.1 '${DIST}/SHA256SUMS.wrong' 2>&1 | grep -q 'does not describe the published assets'"
+
+printf 'nothing  komari-linux-mips\n' > "${DIST}/SHA256SUMS.missing"
+check "exit non-zero when the checksum file lists an asset that is not published" \
+	bash -c "! bash '$GUARD' verify-sums xinian5216/komari-stable v1.5.0-stable.1 '${DIST}/SHA256SUMS.missing'"
+
 # ---------------------------------------------------------------- image tags
 
 echo "== image: an existing fixed version tag must fail =="
