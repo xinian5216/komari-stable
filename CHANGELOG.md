@@ -12,7 +12,48 @@
 
 ---
 
-## 1.5.0-stable.1 — 未发布（待验证）
+## 1.5.0-stable.2 — 候选（未发布）
+
+**基线**：同 `1.5.0-stable.0`（上游 `1.5.0-fix1` / `0ca87aa`），在 `1.5.0-stable.1` 之上增量。
+
+### Security
+
+- **远控能力按 Agent 自报的 capability 门禁**：Server 现在保存 Agent 上报的 capability 与
+  `privilege_level`（内存态，无数据库变更），并在下发 `agent.exec` / `agent.terminal.request` /
+  `agent.file` 前核对：Agent 明确声明不含该能力 → **拒绝下发**并返回明确的 `capability unavailable`
+  错误（exec 还会在任务里记录被跳过的节点），不再依赖"用户点了以后 Agent 再拒绝"。
+  未上报 capability 的旧 Agent 维持历史行为（不因为"没有声明"而被禁止）。
+- **发布不可变策略随版本冻结**：`stable-release.yml` 的二进制、校验和与 Docker 作业全部
+  使用**被发布 tag 自己**的 `scripts/release-guard.sh`；`workflow_dispatch` 的补缺重跑同样 checkout
+  该 tag（此前 checksums 作业会回退到触发分支的脚本）。历史 tag 不含 guard 时 **FAIL CLOSED**
+  （`this legacy release does not contain the immutable release guard; automatic repair is refused`），
+  未来 `stable` 分支的改动无法再改变过去 Release 的不可变规则。
+
+### Changed
+
+- **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
+  从 `komari-web-stable@v1.5.0-stable.0`（`c9d4749`）更新为
+  `komari-web-stable@v1.5.0-stable.1`（`b69e706a147887c96290068e9f1bad9ebe37fe55`，不可变 tag）。
+  该前端按 Agent capability 隐藏/禁用终端、文件管理器与工作台入口，并显示"该 Agent 未启用远程控制"；
+  对未上报 capability 的旧节点保持原 UI；安装命令生成器改为 `--enable-remote-control` 显式 opt-in。
+  随包首选主题 `komari-next-stable@v1.4.19-stable.1` **保持不变**。
+
+### Compatibility
+
+- Agent v2 协议不变：只新增可选字段（`agent.report` 的 `capabilities` / `privilege_level`），
+  旧 Agent 不发送时不改变任何行为；数据库 schema 不变；API 与配置格式不变；Docker 部署方式不变。
+- 已发布的 `v1.5.0-stable.0` / `v1.5.0-stable.1` tag 与资产均未改动。
+
+### Upgrade
+
+- 常规升级：替换二进制或更新镜像即可，无需数据库迁移。首次启动后会逐步从 Agent 的上报中获知
+  capability；在获知之前按旧行为处理。
+
+### Rollback
+
+- 回退到 `1.5.0-stable.1` 的二进制/镜像即可；数据库无 schema 变化，无需回滚数据。
+
+## 1.5.0-stable.1 — 已发布（2026-09-17）
 
 **基线**：同 `1.5.0-stable.0`（上游 `1.5.0-fix1` / `0ca87aa`）。
 
@@ -50,7 +91,7 @@
   因此回滚也不需要恢复主题数据。若在新装实例上不再需要 Komari Next，后台切回 `default` 即可
   （或删除 `data/theme/next`，不会被自动恢复）。
 
-## 1.5.0-stable.0 — 首个稳定基线（候选，未发布）
+## 1.5.0-stable.0 — 首个稳定基线（已发布，2026-09-16）
 
 **基线**：上游 `komari-monitor/komari` tag `1.5.0-fix1`，commit `0ca87aafd184ed75f9030ede0902772142af5eec`
 （上游于 2026-09-15 归档）。
