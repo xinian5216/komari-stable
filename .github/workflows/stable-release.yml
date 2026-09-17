@@ -126,6 +126,10 @@ jobs:
     needs: build-and-attach-binaries
     runs-on: ubuntu-latest
     steps:
+      # 需要仓库内容：上传前用 scripts/release-guard.sh 校验（保持不可变语义）。
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v4
         with:
           pattern: komari-*
