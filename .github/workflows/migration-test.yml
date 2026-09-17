@@ -114,8 +114,12 @@ jobs:
             [ -n "$exe" ] || return 1
             pid=$(ps -eo pid=,args= | awk -v target="$exe" '$2 == target {print $1; exit}')
             [ -n "$pid" ] || return 1
-            printf '%s\n' "$pid" > "$pid_file"
-            kill -0 "$pid" 2>/dev/null
+            # `start`/`stop` 由 sudo 调用，而部分只读断言以 runner 身份调用。
+            # 非特权断言可以从 ps 确认真进程，但不能覆盖 root 创建的 PID 文件。
+            if [ ! -e "$pid_file" ] || [ -w "$pid_file" ]; then
+              printf '%s\n' "$pid" > "$pid_file"
+            fi
+            return 0
           }
           case "$cmd" in
             is-active)
