@@ -7,7 +7,15 @@ name: Komari Stable Release
 # 与上游 release.yml 的区别：
 #   1) 前端 ref 来自固定仓库 + 固定 ref（不解析 -fixN 后缀，不做默认分支回退）；
 #   2) Go 版本显式固定；
-#   3) 汇总生成 SHA256SUMS 并上传到 release。
+#   3) 汇总生成 SHA256SUMS 并上传到 release；
+#   4) 上传前按不可变规则校验（缺失才补、一致才跳过、不一致即失败）。
+#
+# 不可变性（由 scripts/release-guard.sh 强制，见 MAINTENANCE_POLICY.md §2.2）：
+#   * 已发布的 release 资产永不覆盖：同名资产只有字节完全一致时才视为完成并跳过，
+#     字节不同则立即 FAIL（immutable release asset mismatch），也不会删除旧资产绕过；
+#   * 已发布的固定版本镜像 tag 永不指向新 digest：tag 已存在即 FAIL（stable 浮动 tag 仍可更新）；
+#   * workflow_dispatch 只能"补齐缺失资产"——它不具备覆盖重发的能力。
+#     若已公开的产物确实有问题，请发布 v1.5.0-stable.2，而不是重写 stable.1。
 
 on:
   release:
@@ -15,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "已存在的 tag（手动重发时使用，例如 1.5.0-stable.1）"
+        description: "已存在的 tag；手动执行只能补齐缺失资产（已发布资产仅在字节一致时跳过，绝不覆盖）"
         required: true
         type: string
 
@@ -98,13 +106,21 @@ jobs:
         with:
           name: komari-${{ matrix.goos }}-${{ matrix.goarch }}
           path: komari-${{ matrix.goos }}-${{ matrix.goarch }}*
-      - name: Upload binary to release
+      - name: "Upload binary to release (immutable - fill gaps only, never overwrite)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
           NAME="komari-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          gh release upload "${RELEASE_TAG}" "$NAME" --clobber --repo "${{ github.repository }}"
+          PLAN="${RUNNER_TEMP}/assets-to-upload.txt"
+          # 已存在且字节一致 -> 计划里没有它，视为已完成；字节不同 -> guard 直接失败。
+          bash scripts/release-guard.sh assets "${{ github.repository }}" "${RELEASE_TAG}" "$PLAN" "$NAME"
+          if grep -qx "$NAME" "$PLAN"; then
+            # 绝不使用 --clobber：只有目录里确实没有这个资产时才上传。
+            gh release upload "${RELEASE_TAG}" "$NAME" --repo "${{ github.repository }}"
+          else
+            echo "SKIP: ${NAME} is already published with identical bytes"
+          fi
 
   checksums:
     needs: build-and-attach-binaries
@@ -122,11 +138,18 @@ jobs:
           rm -f SHA256SUMS
           sha256sum komari-* > SHA256SUMS
           cat SHA256SUMS
-      - name: Upload SHA256SUMS to release
+      - name: "Upload SHA256SUMS to release (immutable - fill gaps only, never overwrite)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${RELEASE_TAG}" dist/SHA256SUMS --clobber --repo "${{ github.repository }}"
+          set -euxo pipefail
+          PLAN="${RUNNER_TEMP}/assets-to-upload.txt"
+          bash scripts/release-guard.sh assets "${{ github.repository }}" "${RELEASE_TAG}" "$PLAN" dist/SHA256SUMS
+          if grep -qx "SHA256SUMS" "$PLAN"; then
+            gh release upload "${RELEASE_TAG}" dist/SHA256SUMS --repo "${{ github.repository }}"
+          else
+            echo "SKIP: SHA256SUMS is already published with identical bytes"
+          fi
 
   build-and-push-docker:
     needs: build-and-attach-binaries
@@ -168,6 +191,13 @@ jobs:
             TAGS="${TAGS},${REGISTRY}/${IMAGE_NAME}:stable"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+      - name: Refuse to overwrite a published version tag
+        run: |
+          set -euxo pipefail
+          # 固定版本 tag 一经成功发布即不可覆盖：已存在 -> FAIL；stable 浮动 tag 仍可更新。
+          bash scripts/release-guard.sh image \
+            "${REGISTRY}/${IMAGE_NAME}:${RELEASE_TAG}" \
+            "${REGISTRY}/${IMAGE_NAME}:stable"
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
