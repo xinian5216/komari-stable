@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -321,47 +322,93 @@ func downloadThemeFromURL(rawURL string) ([]byte, error) {
 // 返回:
 //   - 最新release的第一个资源的下载链接
 //   - 错误信息（如果有）
+// githubAPIBaseURL is overridable so tests can point the release lookup at a stub.
+var githubAPIBaseURL = "https://api.github.com"
+
+// preferredThemeAssetName is the asset a Komari theme release should publish.
+const preferredThemeAssetName = "dist-release.zip"
+
+// nonThemeAssetPattern matches release assets that are obviously not a theme
+// package (checksums, signatures, metadata), so a release that only carries those
+// is never mistaken for a theme.
+var nonThemeAssetPattern = regexp.MustCompile(`(?i)^sha256sums$|^checksums.*$|^sha512sums$|\.(sha256|sha1|sha512|md5|sig|asc|pem|json|txt|ya?ml|toml)$`)
+
+type githubReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// selectThemeReleaseAsset picks the theme package from a GitHub release.
+//
+// Rules (asset order is irrelevant):
+//  1. an asset named exactly dist-release.zip wins;
+//  2. otherwise a release with exactly one non-checksum asset keeps the legacy
+//     single-asset behaviour;
+//  3. otherwise the selection fails loudly instead of guessing - a release whose
+//     assets are all checksums/metadata, or a multi-asset release without
+//     dist-release.zip, is rejected.
+//
+// The downloaded archive still has to pass the theme zip validator afterwards.
+func selectThemeReleaseAsset(assets []githubReleaseAsset) (string, error) {
+	if len(assets) == 0 {
+		return "", errors.New("GitHub release 中没有可下载的资源")
+	}
+
+	for _, asset := range assets {
+		if asset.BrowserDownloadURL == "" {
+			continue
+		}
+		if asset.Name == preferredThemeAssetName {
+			return asset.BrowserDownloadURL, nil
+		}
+	}
+
+	var legacyCandidates []githubReleaseAsset
+	for _, asset := range assets {
+		if asset.BrowserDownloadURL == "" {
+			continue
+		}
+		if nonThemeAssetPattern.MatchString(strings.TrimSpace(asset.Name)) {
+			continue
+		}
+		legacyCandidates = append(legacyCandidates, asset)
+	}
+
+	switch len(legacyCandidates) {
+	case 0:
+		return "", fmt.Errorf("release 中没有主题包（期望资产名 %s）", preferredThemeAssetName)
+	case 1:
+		return legacyCandidates[0].BrowserDownloadURL, nil
+	default:
+		return "", fmt.Errorf("release 有 %d 个候选资产且没有 %s，无法确定主题包", len(legacyCandidates), preferredThemeAssetName)
+	}
+}
+
 func getGitHubReleaseDownloadURL(owner, repo string) (string, error) {
 	if owner == "" || repo == "" {
 		return "", errors.New("GitHub仓库所有者和仓库名称不能为空")
 	}
 
-	// 构建GitHub API URL
-	// 使用GitHub API获取最新release信息
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/releases/latest", strings.TrimRight(githubAPIBaseURL, "/"), owner, repo)
 
-	// 发送HTTP GET请求
 	resp, err := http.Get(apiURL)
 	if err != nil {
 		return "", fmt.Errorf("获取GitHub release信息失败: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("获取GitHub release信息失败，HTTP状态码: %d", resp.StatusCode)
 	}
 
-	// 解析JSON响应
-	// GitHub API返回的JSON包含assets数组，每个asset包含browser_download_url字段
 	var releaseInfo struct {
-		Assets []struct {
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
+		Assets []githubReleaseAsset `json:"assets"`
 	}
-
 	if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil {
 		return "", fmt.Errorf("解析GitHub API响应失败: %v", err)
 	}
 
-	// 检查是否有可下载的资源
-	if len(releaseInfo.Assets) == 0 {
-		return "", errors.New("GitHub release中没有可下载的资源")
-	}
-
-	// 返回第一个资源的下载链接
-	// 相当于shell命令: curl -s https://api.github.com/repos/owner/repo/releases/latest | jq -r ".assets[0].browser_download_url"
-	return releaseInfo.Assets[0].BrowserDownloadURL, nil
+	return selectThemeReleaseAsset(releaseInfo.Assets)
 }
 
 // isGitHubRepoURL 检查URL是否是GitHub仓库地址
