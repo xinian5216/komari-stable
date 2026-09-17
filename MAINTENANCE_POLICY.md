@@ -21,6 +21,23 @@
 | 测试 | 为已修复问题补充回归测试 | `test:` |
 | 杂项维护 | 版本号、元数据等无行为影响的改动 | `chore:` |
 
+### 2.1 允许的例外：发行版打包 / 默认行为调整（distribution packaging / default changes）
+
+`stable` 原则上不改变用户可见行为，但**允许极其有限**的"发行版打包与默认行为"调整，且必须**同时**满足：
+
+1. 不改变数据库 Schema；
+2. 不改变 Agent / HTTP API 协议；
+3. **只影响全新安装**；
+4. **不覆盖现有用户的选择**（升级、迁移、重启都不得改写用户配置或用户目录数据）；
+5. 必须有完整 fallback：资产缺失/损坏/非法时退回原有行为，服务照常启动，管理后台与恢复页面不受影响；
+6. 必须在 `CHANGELOG.md` 中明确记录（范围、影响面、回滚方式），并在 `README.md` 说明。
+
+已应用此项的变更：
+
+- **新安装默认前台主题 = Komari Next（随包内嵌的 bundled preferred theme）**。首次进入 `1.5.0-stable.1`（尚未发布）。
+  嵌入式核心前端仍为 `xinian5216/komari-web-stable`（`/admin`、`/terminal`、recovery/restricted 与 fallback），
+  既有实例升级后 `theme` 配置与 `data/theme/*` 完全不变。
+
 ## 3. 禁止进入 `stable` 的改动（除非维护者明确决策并记录）
 
 - 全项目格式化、批量重命名、目录大规模调整；

@@ -18,6 +18,11 @@
 - ✅ **只做**：Bug 修复、安全修复、兼容性维护、构建/CI 修正、文档。
 - ❌ **不做**：重构、框架/依赖大版本迁移、API 重设计、UI 重写、大型新功能。
 - 🔒 **冻结**：数据库 Schema、Agent v2 线协议、HTTP API 行为、配置格式、Docker 部署方式。
+- 🎨 **新安装默认前台主题**：**Komari Next**（随包内嵌，原作者 **Tony Liu / `tonyliuzj`**，
+  <https://github.com/tonyliuzj/komari-next> 的稳定镜像 `xinian5216/komari-next-stable`）。
+  本 fork 只做稳定镜像与兼容维护，不主张主题著作权。管理后台、终端、恢复页面与 fallback 仍使用
+  嵌入式核心前端 `xinian5216/komari-web-stable`；**既有实例升级不受影响**，任何时候都能在
+  后台把前台切回内置 `default` 主题。
 
 ### 版本与分支
 
@@ -226,24 +231,28 @@ sudo systemctl start komari-agent
 
 ### 从源码构建
 
-1. 构建前端（本分支固定引用自维护的前端镜像：`xinian5216/komari-web-stable`，ref 固定为发版 tag）：
+1. 准备构建期资产（**唯一入口**，幂等；版本与哈希只由 `bundled-themes.lock.json` 决定）：
 
 ```bash
-git clone https://github.com/xinian5216/komari-web-stable
-cd komari-web-stable && npm install && npm run build
+./scripts/prepare-assets.sh all        # Windows: powershell -File scripts\prepare-assets.ps1 all
 ```
 
-2. 打包主题并构建后端（**顺序不可颠倒**，后端通过 `//go:embed` 嵌入前端产物）：
+它会同时准备两样东西：
+
+- `web/public/defaultTheme/` —— 嵌入式核心前端（自维护镜像 `xinian5216/komari-web-stable`，固定 tag）；
+- `web/public/bundledTheme/next.zip` —— 随包首选主题 **Komari Next**（自维护镜像
+  `xinian5216/komari-next-stable`，固定 tag，**校验 SHA256**）。
+
+2. 构建后端（后端通过 `//go:embed` 嵌入上述产物，因此顺序不可颠倒）：
 
 ```bash
-mkdir -p web/public/defaultTheme
-tar -cf /tmp/komari-dist.tar -C ../komari-web-stable/dist .
-zstd -19 -T0 -f /tmp/komari-dist.tar -o web/public/defaultTheme/dist.tar.zst
-cp ../komari-web-stable/komari-theme.json web/public/defaultTheme/
-
 CGO_ENABLED=1 go build -o komari .   # 需要 C 编译器（跨平台编译可用 zig cc）
 ./komari server -l 0.0.0.0:25774
 ```
+
+> 全新安装完成后，前台默认使用随包内嵌的 **Komari Next**；`/admin`、`/terminal` 与恢复页面始终使用
+> 嵌入式核心前端。既有实例升级不受影响（详见 [`CHANGELOG.md`](./CHANGELOG.md) 与
+> [`MAINTENANCE_POLICY.md`](./MAINTENANCE_POLICY.md) 的"发行版打包 / 默认行为调整"一节）。
 
 ### 组件与仓库
 
@@ -251,6 +260,7 @@ CGO_ENABLED=1 go build -o komari .   # 需要 C 编译器（跨平台编译可�
 | --- | --- | --- | --- |
 | 服务端 + 默认主题载体 | **本仓库**（`xinian5216/komari-stable`） | `komari-monitor/komari`（已归档） | MIT（上游 `LICENSE` 原样保留） |
 | 前端默认主题 | `xinian5216/komari-web-stable`（CI 固定 tag） | `komari-monitor/komari-web` | 上游根目录无 `LICENSE` 文件；依上游作者在其仓库内的明示为 MIT，取证见 [`komari-web-stable/LICENSE_AUDIT.md`](https://github.com/xinian5216/komari-web-stable/blob/stable/LICENSE_AUDIT.md) |
+| 随包首选前台主题 | `xinian5216/komari-next-stable`（构建期按不可变 tag 固定，见 `bundled-themes.lock.json`） | `tonyliuzj/komari-next`（作者 Tony Liu） | MIT（上游 `LICENSE` 与 Credits 原样保留）；本 fork 只做稳定镜像与兼容维护 |
 | Agent | `xinian5216/komari-agent-stable`（本 fork 维护的安装/更新通道；**v2 协议冻结、向后兼容**） | `komari-monitor/komari-agent` | MIT（上游 `LICENSE` 原样保留） |
 
 ### 文档索引

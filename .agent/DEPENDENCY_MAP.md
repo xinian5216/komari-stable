@@ -13,6 +13,16 @@
 | `github.com/gorilla/websocket` | WebSocket | Agent v2、前端实时流、终端 |
 | `github.com/google/uuid` | UUID | 节点/用户标识 |
 
+## 构建期资产（不是 Go 依赖，但决定 `//go:embed` 能否编译）
+
+| 资产 | 来源（唯一事实来源：`bundled-themes.lock.json`） | 产物 |
+| --- | --- | --- |
+| 嵌入式核心前端 | `xinian5216/komari-web-stable` @ 固定 tag（构建：`npm ci` + `npm run build` + tar/zstd） | `web/public/defaultTheme/dist.tar.zst` |
+| 随包首选主题 | `xinian5216/komari-next-stable` @ 固定 tag 的 `dist-release.zip`（**校验 sha256**） | `web/public/bundledTheme/next.zip` |
+
+准备入口只有一个：`scripts/prepare-assets.py`（`all` / `frontend` / `theme`；幂等，哈希正确即复用）。
+CI 中所有会解析 `//go:embed` 的命令（`go test` / `go vet` / `go build` / `govulncheck`）之前都必须先准备资产。
+
 ## 数据库
 
 | 依赖 | 用途 |

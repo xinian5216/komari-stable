@@ -12,6 +12,38 @@
 
 ---
 
+## 1.5.0-stable.1 — 未发布（待验证）
+
+**基线**：同 `1.5.0-stable.0`（上游 `1.5.0-fix1` / `0ca87aa`）。
+
+### Fixed
+
+- **多资产 Release 的主题更新选择错误**：`web/api/admin/theme.go` 的 `getGitHubReleaseDownloadURL()`
+  原先直接取 `assets[0]`，当 Release 同时包含主题包与校验和（如本 fork 的 `dist-release.zip` +
+  `SHA256SUMS` + `dist-release.zip.sha256`）时可能下载到校验和文件。现在**精确优先 `dist-release.zip`**、
+  与资产顺序无关；多资产且无该文件时明确报错；仅"单资产旧主题"保留兼容 fallback，
+  且校验和/签名/元数据类资产永不作为主题包；最终仍由既有主题 ZIP 校验器把关。
+
+### Compatibility
+
+- **数据库**：无 Schema / 迁移改动。
+- **Agent / API**：无变化（v2 协议、HTTP API 与配置格式均未改动）。
+- **Docker 部署方式**：无变化。
+- **新安装默认前台**：全新安装的首选前台主题为随包内嵌的 **Komari Next**（`short = next`）；
+  `/admin`、`/terminal`、recovery/restricted 页面与 fallback 仍使用嵌入式核心前端
+  （`xinian5216/komari-web-stable`）。**既有实例不受影响**：升级不 seed 主题、不创建
+  `data/theme/next`、不改 `theme` 配置、不动任何既有主题目录；用户手动删除该主题后也不会被自动恢复。
+
+### Upgrade
+
+- 原地升级方式不变（`install-komari.sh --migrate --yes`，或 Docker 换 tag）。升级过程不触碰主题配置。
+
+### Rollback
+
+- 回滚方式不变（换回旧二进制/旧镜像 tag，复用同一 data 卷）。`theme` 配置与主题目录不受升级影响，
+  因此回滚也不需要恢复主题数据。若在新装实例上不再需要 Komari Next，后台切回 `default` 即可
+  （或删除 `data/theme/next`，不会被自动恢复）。
+
 ## 1.5.0-stable.0 — 首个稳定基线（候选，未发布）
 
 **基线**：上游 `komari-monitor/komari` tag `1.5.0-fix1`，commit `0ca87aafd184ed75f9030ede0902772142af5eec`
