@@ -32,7 +32,10 @@
 
 一键安装脚本：`install-komari.sh`（本仓库自带，发布源即本仓库，不依赖上游）。
 
-#### 1. 全新安装 Server
+部署入口一览：**一键安装 Server** / **Docker 安装** / **Docker Compose** / **从官方 Server 原地迁移** /
+**全新安装 Agent** / **从官方 Agent 接管** / **更新** / **回滚** / **从源码构建**。
+
+#### 1. 一键安装 Server
 
 ```bash
 # 交互式（与官方脚本体验一致）
@@ -40,9 +43,76 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-stable/stable/ins
 
 # 非交互（默认 25774 端口）
 curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-stable/stable/install-komari.sh | sudo bash -s -- --install --yes
+
+# 查看当前版本 / 来源 / 服务状态（不需要 root）
+curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-stable/stable/install-komari.sh | bash -s -- --status
 ```
 
-#### 2. 从官方 Komari 迁移（原地升级，不重装）
+#### 2. Docker 安装（Docker Run）
+
+镜像发布在 GHCR：`ghcr.io/xinian5216/komari-stable`。**无需登录即可拉取**（匿名拉取已实测通过）。
+容器内工作目录 `/app`，数据在 `/app/data`，监听 `25774`。
+
+```bash
+# 浮动 tag：始终跟随最新 stable 版本
+docker run -d --name komari \
+  -p 25774:25774 \
+  -v komari-data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/xinian5216/komari-stable:stable
+
+# 固定版本 tag（生产环境推荐：可复现、可回滚）
+docker run -d --name komari \
+  -p 25774:25774 \
+  -v komari-data:/app/data \
+  --restart unless-stopped \
+  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+```
+
+- `-p 25774:25774`：面板端口（镜像内 `KOMARI_LISTEN=0.0.0.0:25774`）。
+- `-v ...:/app/data`：**必须挂载**，主库、metrics 库、配置、插件与主题都在这里；镜像本身未声明 VOLUME。
+- `--restart unless-stopped`：随主机重启自动恢复。
+- 强调可复现性的生产环境，建议固定到 `v1.5.0-stable.0` 这类**不可变版本 tag**，而不是 `stable` 浮动 tag。
+
+#### 3. Docker Compose
+
+仓库根目录提供最小可用的 [`compose.yaml`](./compose.yaml)：
+
+```yaml
+services:
+  komari:
+    image: ghcr.io/xinian5216/komari-stable:stable
+    container_name: komari
+    ports:
+      - "25774:25774"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+```
+
+```bash
+docker compose up -d
+```
+
+**从官方镜像切换过来**（原先使用 `ghcr.io/komari-monitor/komari`）：两者数据都在容器内 `/app/data`，
+因此**复用原来的数据卷即可**，但必须先备份：
+
+```bash
+# 1) 备份（把 <卷名> 换成你原来的卷；bind mount 则直接打包宿主机目录）
+docker run --rm -v <卷名>:/data -v "$(pwd)":/backup alpine \
+  tar czf /backup/komari-data-$(date +%F).tar.gz -C /data .
+
+# 2) 停止旧容器（不要删除它，也不要删除数据卷）
+docker stop <旧容器名>
+
+# 3) 用同一数据卷启动 Komari Stable 镜像（先用固定版本 tag）
+docker run -d --name komari -p 25774:25774 -v <卷名>:/app/data \
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+```
+
+确认面板、节点与数据正常后，再自行决定是否清理旧容器/旧镜像。**脚本不会自动删除任何容器或数据卷。**
+
+#### 4. 从官方 Server 原地迁移（原地升级，不重装）
 
 安装路径与服务名与官方一致（`/opt/komari`、`komari.service`），因此**官方脚本安装的实例可被直接接管**：
 
@@ -60,13 +130,18 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 - 下载新二进制到暂存文件，**校验 `.sha256`**（发布方提供时强制校验）后再落位；
 - 启动失败时**自动回滚**旧二进制。
 
+> **推荐顺序（重要）**：① 先接管 Agent（见 §6），逐个确认 `Github Repo:` 已变为
+> `xinian5216/komari-agent-stable` 且节点以 v2 在线；② 再原地迁移 Server。
+> **升级主控不会自动改变既有 Agent 的更新源**——Server 升级后，旧 Agent 不会自动跟随本 fork，
+> 必须每个 Agent 执行一次接管（§6）。
+
 > ⚠️ **升级前请确认 Agent 兼容性**：服务端 1.5.0 起只接受 **v2 协议**。Agent 的 v2 支持自
 > **1.2.10** 引入（当时可选），**1.5.0 起 v2 成为唯一协议**。因此迁移前请确保每个节点的 Agent
 > **不低于 1.5.0**；如果个别节点仍在 1.2.10–1.4.x，需先确认它实际以 v2 上报，否则升级后无法上报。
 > 最稳妥的做法：先把所有 Agent 升级到 **v1.5.10-stable.0**（本 fork），再升级面板。
 > 逐个确认方式：面板 nodes 页，或 `journalctl -u komari-agent | grep -i "protocol\|version"`。
 
-#### 3. 全新安装 Agent
+#### 5. 全新安装 Agent
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stable/install.sh | sudo bash -s -- -e <ENDPOINT> -t <TOKEN>
@@ -74,9 +149,9 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 
 `<ENDPOINT>` / `<TOKEN>` 从面板「节点 → 添加节点」处获取。
 
-#### 4. 从官方 Agent 迁移
+#### 6. 从官方 Agent 接管
 
-主控升级**不会**改变已安装 Agent 的自更新来源，因此每个既有 Agent 需要执行一次迁移：
+主控升级**不会**改变已安装 Agent 的自更新来源，因此每个既有 Agent 需要执行一次接管：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stable/migrate-komari-agent.sh | sudo bash -s -- -y
@@ -86,25 +161,34 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 只替换二进制与更新来源，然后重启服务；最后打印 Agent 日志中的 `Github Repo:` 行以确认
 来源已变为 `xinian5216/komari-agent-stable`。**不需要重新添加节点或重新生成 token。**
 
-#### 5. 更新
+#### 7. 更新
 
 ```bash
-# Server：再次运行安装脚本的迁移/升级动作即可
+# Server（systemd 安装）：再次执行迁移/升级动作
 sudo bash /tmp/install-komari.sh --migrate --yes
 # 或交互菜单：curl -fsSL <同上> | sudo bash → 选 2) 升级
 
-# Agent：自更新默认开启，无需手动操作
-#   手动执行：sudo bash migrate-komari-agent.sh -y
+# Server（Docker）：
+docker compose pull && docker compose up -d
+#   或 docker run：先 docker pull 新 tag，再删除容器并用原数据卷重建（数据在卷里，不会丢）
+#   ⚠️ 不要删除数据卷（不要 docker volume rm，也不要给 docker run 加 -v 删除参数）
+
+# Agent：自更新默认开启，无需手动操作；也可手动执行
+sudo bash migrate-komari-agent.sh -y
 ```
 
-#### 6. 回滚
+#### 8. 回滚
 
 ```bash
-# Server：改回旧二进制（数据无需回滚，升级不改 Schema）
+# Server（systemd）：改回旧二进制（数据无需回滚，升级不改 Schema）
 sudo systemctl stop komari
 sudo cp /opt/komari/komari.backup.<时间戳> /opt/komari/komari
 sudo systemctl start komari
-# 如需回到指定版本：sudo bash /tmp/install-komari.sh --migrate --yes --target-version v1.5.0-stable.0
+# 如需回到指定版本（例如重装某个固定版本）：
+sudo bash /tmp/install-komari.sh --migrate --yes --target-version v1.5.0-stable.0
+
+# Server（Docker）：把 image tag 改回旧固定版本，重建容器，继续使用原数据卷
+# （compose：修改 compose.yaml 的 image tag；docker run：用旧 tag 重新 run，参数不变）
 
 # Agent：用备份二进制回滚
 sudo systemctl stop komari-agent
@@ -112,8 +196,7 @@ sudo cp /opt/komari/agent.backup.<时间戳> /opt/komari/agent
 sudo systemctl start komari-agent
 ```
 
-> 服务端在检测到版本变化时还会**自动把整个 `data` 目录备份**到 `data/backup/upgrade-<时间戳>.zip`；
-> Docker 部署与上游一致（`-v $(pwd)/data:/app/data -p 25774:25774`，镜像 tag 见 Releases 页）。
+> 服务端在检测到版本变化时还会**自动把整个 `data` 目录备份**到 `data/backup/upgrade-<时间戳>.zip`。
 
 ### 从源码构建
 
@@ -138,11 +221,11 @@ CGO_ENABLED=1 go build -o komari .   # 需要 C 编译器（跨平台编译可�
 
 ### 组件与仓库
 
-| 组件 | 本分支使用的仓库 | 上游来源 |
-| --- | --- | --- |
-| 服务端 + 默认主题载体 | **本仓库**（`xinian5216/komari-stable`） | `komari-monitor/komari`（已归档） |
-| 前端默认主题 | `xinian5216/komari-web-stable`（CI 固定 tag） | `komari-monitor/komari-web` |
-| Agent | `xinian5216/komari-agent-stable`（本 fork 维护的安装/更新通道；**v2 协议冻结、向后兼容**） | `komari-monitor/komari-agent` |
+| 组件 | 本分支使用的仓库 | 上游来源 | 许可状态 |
+| --- | --- | --- | --- |
+| 服务端 + 默认主题载体 | **本仓库**（`xinian5216/komari-stable`） | `komari-monitor/komari`（已归档） | MIT（上游 `LICENSE` 原样保留） |
+| 前端默认主题 | `xinian5216/komari-web-stable`（CI 固定 tag） | `komari-monitor/komari-web` | 上游根目录无 `LICENSE` 文件；依上游作者在其仓库内的明示为 MIT，取证见 [`komari-web-stable/LICENSE_AUDIT.md`](https://github.com/xinian5216/komari-web-stable/blob/stable/LICENSE_AUDIT.md) |
+| Agent | `xinian5216/komari-agent-stable`（本 fork 维护的安装/更新通道；**v2 协议冻结、向后兼容**） | `komari-monitor/komari-agent` | MIT（上游 `LICENSE` 原样保留） |
 
 ### 文档索引
 
@@ -187,7 +270,19 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 # take over an existing official agent (keeps endpoint/token/interval, swaps the
 # binary and the self-update source, then restarts the service)
 curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stable/migrate-komari-agent.sh | sudo bash -s -- -y
+
+# docker (no login required; anonymous pull verified)
+docker run -d --name komari -p 25774:25774 -v komari-data:/app/data \
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:stable
+# pin a release tag for reproducible production deployments:
+#   ghcr.io/xinian5216/komari-stable:v1.5.0-stable.0
+# compose: see compose.yaml; update with `docker compose pull && docker compose up -d`;
+# roll back by switching the image tag back and recreating the container (same data volume).
 ```
+
+Migrate the agents first (they do not follow the panel automatically): take over every existing
+agent, confirm `Github Repo:` shows `xinian5216/komari-agent-stable` and the node reports over v2,
+then migrate the panel.
 
 Note: server 1.5.0 and later speak only the v2 protocol. Agent-side v2 support landed in
 **1.2.10** (opt-in) and became the only protocol in agent **1.5.0**, so make sure every node runs
