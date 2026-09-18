@@ -31,6 +31,14 @@
   表名并补齐 capability 三态、远控门禁和迁移风险。Web、Agent、Komari Next 三个配套仓库新增
   各自的 `AGENTS.md`。
 
+### Changed
+
+- **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
+  从 `komari-web-stable@v1.5.0-stable.1`（`b69e706`）更新为
+  `komari-web-stable@v1.5.0-stable.2`（`6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d`，不可变 tag）。
+  该前端把 `/admin`、`/terminal`、`/manage`、`/install`、`/database-recovery` 移出
+  Workbox navigation fallback。随包首选主题 `komari-next-stable@v1.4.19-stable.1` **保持不变**。
+
 ### Compatibility
 
 - 不修改数据库 Schema、Agent v2 已有字段、HTTP API、配置格式或 Docker 部署方式。
