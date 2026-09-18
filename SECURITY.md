@@ -16,6 +16,8 @@
 - 组件归属：服务端（本仓库）、前端（`xinian5216/komari-web-stable`）、Agent（`xinian5216/komari-agent-stable`）
   均由本 fork 维护，可直接在对应仓库报告；`komari-protocol` 仍作为上游协议冻结的对照基准。
 
+完整的分级、私密修复、发布与演练流程见 [SECURITY_RESPONSE.md](./SECURITY_RESPONSE.md)。
+
 本分支为社区志愿维护，**不承诺 SLA**；但安全类问题会被优先处理，修复会以 `security:` 前缀提交并
 在 `CHANGELOG.md` 的 `Security` 段中说明。
 
@@ -35,6 +37,13 @@
 - Agent 二进制本身的问题：报告到 `xinian5216/komari-agent-stable`（本 fork 维护的镜像仓库，源自上游）；
 - 纯配置错误（如把面板直接暴露在公网且关闭鉴权、未启用 HTTPS 等）；
 - 依赖中**不可达**的漏洞（会记录并随安全升级处理，不单独算安全问题）。
+
+## 自动安全检查
+
+- 每次相关 PR / `stable` 推送运行 CodeQL 与固定版本的 `govulncheck`；
+- 每日定时重扫，以捕获代码未变化但漏洞数据库新增的公告；
+- 结果进入 GitHub Security / Code scanning，漏洞详情不会自动写入公开 Issue；
+- Dependabot 常规更新只分组 minor/patch；安全告警单独评估可达性，不做无边界大升级。
 
 ## 已知安全历史（供运维参考）
 
