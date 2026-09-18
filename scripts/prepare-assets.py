@@ -21,6 +21,8 @@ Test-only injection (never used by CI/release):
                           then the local file's hash unless --theme-sha256 is given)
   --theme-sha256 HEX      record this hash as the expected bundle hash (used to build
                           fixtures that exercise the runtime hash-mismatch path)
+  --frontend-dir PATH     pack a local komari-web-stable checkout or dist/ instead of
+                          cloning the locked commit (for verifying an unpublished frontend)
 """
 
 from __future__ import annotations
@@ -118,12 +120,68 @@ def find_zstd() -> str:
     return candidate
 
 
-def prepare_frontend(assets: dict, force: bool) -> None:
+def pack_frontend_dist(dist: Path, checkout: Path, commit: str, spec: dict) -> None:
+    if not (dist / "index.html").exists():
+        raise SystemExit("FAIL: frontend build did not produce dist/index.html")
+
+    FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="komari-web-pack-") as tmp:
+        staging_tar = Path(tmp) / "dist.tar"
+        with tarfile.open(staging_tar, "w") as archive:
+            for entry in sorted(dist.iterdir()):
+                archive.add(entry, arcname=entry.name)
+
+        zstd = find_zstd()
+        tmp_out = FRONTEND_DIR / "dist.tar.zst.tmp"
+        run([zstd, "-19", "-T0", "-q", "-f", str(staging_tar), "-o", str(tmp_out)])
+        os.replace(tmp_out, FRONTEND_DIR / "dist.tar.zst")
+
+    for name in ("komari-theme.json", "preview.png", "perview.png"):
+        candidate = checkout / name
+        if candidate.exists():
+            shutil.copyfile(candidate, FRONTEND_DIR / name)
+    preview = FRONTEND_DIR / "preview.png"
+    perview = FRONTEND_DIR / "perview.png"
+    if preview.exists() and not perview.exists():
+        shutil.copyfile(preview, perview)
+    if perview.exists() and not preview.exists():
+        shutil.copyfile(perview, preview)
+
+    tarball = FRONTEND_DIR / "dist.tar.zst"
+    digest = sha256_file(tarball)
+    save_provenance(
+        "embedded_default_frontend",
+        {
+            "repository": spec["repository"],
+            "tag": spec["tag"],
+            "commit": commit,
+            "artifact": "web/public/defaultTheme/dist.tar.zst",
+            "sha256": digest,
+        },
+    )
+    log(f"frontend: packed {commit[:8]} -> dist.tar.zst (sha256={digest[:16]}...)")
+
+
+def prepare_frontend(assets: dict, force: bool, local_dir: str | None = None) -> None:
     spec = assets["embedded_default_frontend"]
     commit = spec["commit"]
     tarball = FRONTEND_DIR / "dist.tar.zst"
     manifest = FRONTEND_DIR / "komari-theme.json"
     provenance = load_provenance().get("embedded_default_frontend") or {}
+
+    if local_dir:
+        source = Path(local_dir).resolve()
+        if (source / "dist" / "index.html").is_file():
+            dist = source / "dist"
+            checkout = source
+        elif source.name == "dist" and (source / "index.html").is_file():
+            dist = source
+            checkout = source.parent
+        else:
+            raise SystemExit(f"FAIL: --frontend-dir {source} has no dist/index.html")
+        log(f"frontend: using local directory {dist}")
+        pack_frontend_dist(dist, checkout, "local", spec)
+        return
 
     if not force and tarball.exists() and manifest.exists():
         if provenance.get("commit") == commit:
@@ -145,45 +203,7 @@ def prepare_frontend(assets: dict, force: bool) -> None:
         install_cmd = ["npm", "ci", "--no-audit", "--no-fund"] if (checkout / "package-lock.json").exists() else ["npm", "install", "--no-audit", "--no-fund"]
         run(install_cmd, cwd=checkout)
         run(["npm", "run", "build"], cwd=checkout)
-
-        dist = checkout / "dist"
-        if not (dist / "index.html").exists():
-            raise SystemExit("FAIL: frontend build did not produce dist/index.html")
-
-        FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
-        staging_tar = Path(tmp) / "dist.tar"
-        with tarfile.open(staging_tar, "w") as archive:
-            for entry in sorted(dist.iterdir()):
-                archive.add(entry, arcname=entry.name)
-
-        zstd = find_zstd()
-        tmp_out = FRONTEND_DIR / "dist.tar.zst.tmp"
-        run([zstd, "-19", "-T0", "-q", "-f", str(staging_tar), "-o", str(tmp_out)])
-        os.replace(tmp_out, tarball)
-
-        for name in ("komari-theme.json", "preview.png", "perview.png"):
-            candidate = checkout / name
-            if candidate.exists():
-                shutil.copyfile(candidate, FRONTEND_DIR / name)
-        preview = FRONTEND_DIR / "preview.png"
-        perview = FRONTEND_DIR / "perview.png"
-        if preview.exists() and not perview.exists():
-            shutil.copyfile(preview, perview)
-        if perview.exists() and not preview.exists():
-            shutil.copyfile(perview, preview)
-
-    digest = sha256_file(tarball)
-    save_provenance(
-        "embedded_default_frontend",
-        {
-            "repository": spec["repository"],
-            "tag": spec["tag"],
-            "commit": commit,
-            "artifact": "web/public/defaultTheme/dist.tar.zst",
-            "sha256": digest,
-        },
-    )
-    log(f"frontend: built {commit[:8]} -> dist.tar.zst (sha256={digest[:16]}...)")
+        pack_frontend_dist(checkout / "dist", checkout, commit, spec)
 
 
 def download(url: str, destination: Path) -> None:
@@ -264,11 +284,16 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="rebuild/re-download even if the asset looks current")
     parser.add_argument("--theme-zip", default=None, help="test only: use a local zip instead of downloading")
     parser.add_argument("--theme-sha256", default=None, help="test only: record this hash instead of the locked one")
+    parser.add_argument(
+        "--frontend-dir",
+        default=None,
+        help="test only: pack a local komari-web-stable checkout or dist/ instead of cloning the locked commit",
+    )
     args = parser.parse_args()
 
     assets = load_lock(Path(args.lock))
     if args.target in ("all", "frontend"):
-        prepare_frontend(assets, args.force)
+        prepare_frontend(assets, args.force, args.frontend_dir)
     if args.target in ("all", "theme"):
         prepare_theme(assets, args.force, args.theme_zip, args.theme_sha256)
     log("done")

@@ -88,7 +88,24 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 | 多平台构建 | 第 2 节（换 CC target） | `stable-ci.yml` 的 `build` 作业 |
 | 密钥扫描 | `gitleaks` | `secret-scan.yml` |
 | 索引一致性 | `python scripts/check_agent_index.py` | `stable-ci.yml` 的 `agent-index` 作业 |
+| 后台 SW E2E | 第 8 节 | `admin-sw-e2e.yml` |
 | 发布（二进制 + Docker） | 第 2/5 节 | `stable-release.yml`（release published 触发） |
+
+## 8. 后台 Service Worker 浏览器 E2E
+
+需要已准备的构建期资产、本机 `go build` 出的二进制，以及 Playwright Chromium：
+
+```bash
+python3 scripts/prepare-assets.py all
+go build -trimpath -o komari .
+cd e2e
+npm ci
+npx playwright install chromium
+npx playwright test
+```
+
+Windows 把 `-o komari` 换成 `-o komari.exe`。测试会在临时目录做一次 fresh install，断言
+`theme=next`、`/` 为 Next、`/admin/dashboard` 为嵌入式后台，且 Service Worker 不能把后台变成首页。
 
 ## 7. 原地迁移 E2E（官方 1.4.3 → Stable）
 

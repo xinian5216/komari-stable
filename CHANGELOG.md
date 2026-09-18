@@ -16,6 +16,11 @@
 
 ### Fixed / Security
 
+- **theme=next 时后台被 Service Worker 显示成公开首页**：fresh install 仍默认 `theme=next`，`/` 仍由
+  Komari Next 提供。`/admin`、`/terminal`、`/manage` 等核心路径强制使用嵌入式 default frontend，
+  并从 HTML 中去掉根作用域 SW 注册。`/sw.js` 与 `/registerSW.js` 不被公开主题覆盖；升级后的
+  `/sw.js` 在 Workbox 脚本前追加 core-route network bypass（不改写生成代码），旧 fallback
+  不再把 Next 首页当成 `/admin` 返回。浏览器 E2E 见 `e2e/`。
 - **原地迁移改为可验证的离线事务**：目标二进制先在旧服务运行期间下载并强制校验本仓库发布的
   `.sha256` / `SHA256SUMS`；通过磁盘空间门禁后才停止服务，离线打包并验证 `data/`，不再在线复制
   SQLite/WAL。历史二进制备份不再在迁移前删除。

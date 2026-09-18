@@ -30,6 +30,7 @@ internal/bundledtheme/  把随包主题 seed 到 data/theme/<short> 的胶水（
 bundled-themes.lock.json  构建期资产的唯一事实来源（repository/tag/commit/asset/sha256）
 .agent/        AI Agent 索引（本目录）
 scripts/       维护脚本（.agent 索引一致性检查、prepare-assets.py 统一准备构建期资产）
+e2e/           Playwright 浏览器 E2E（fresh install + Next 首页 vs `/admin` + Service Worker）
 .github/       CI/CD：11 个上游 workflow + stable-ci / stable-release / secret-scan（本 fork 新增）
 ```
 
