@@ -93,6 +93,14 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 | 后台 SW E2E | 第 8 节 | `admin-sw-e2e.yml` |
 | 发布（二进制 + Docker） | 第 2/5 节 | `stable-release.yml`（release published 触发） |
 
+发布作业先从受保护的 `stable` 分支运行 `scripts/release-preflight.sh`：正式 tag 必须匹配
+`vX.Y.Z-stable.N`、指向 `stable` 历史中的 commit，且该 commit 的 `required-gate`、
+`admin-sw-gate`、`security-gate`、`secret-gate` 都必须由 GitHub Actions 成功完成。离线正反向自测：
+
+```bash
+bash scripts/tests/test-release-preflight.sh
+```
+
 ## 8. 后台 Service Worker 浏览器 E2E
 
 需要已准备的构建期资产、本机 `go build` 出的二进制，以及 Playwright Chromium：

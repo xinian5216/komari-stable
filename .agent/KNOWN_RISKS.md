@@ -22,7 +22,7 @@
 | 前端构建/嵌入 | 🟡 | `web/public/*`、`bundled-themes.lock.json`、`scripts/prepare-assets.py`、`.github/actions/prepare-assets/*` | 资产 ref/tag 漂移导致构建不可复现；未校验资产进入二进制 | 只通过锁文件固定 repository/tag/commit/sha256；不要改 embed 结构；CI 会断言产物哈希与锁一致 |
 | 公开主题 vs 后台 SW | 🟠 | `web/public/public.go`、`komari-web-stable` `vite.config.ts` | `theme=next` 时根作用域 Workbox 把 Next 的 `index.html` 当成 `/admin` fallback；curl 测不到 SW | 核心路径必须 force default、剥离 SW 注册；PWA denylist 必须覆盖 `/admin` `/terminal` `/manage`；改动要跑 `e2e/` Playwright |
 | 随包主题 seed | 🟠 | `internal/themebundle/*`、`internal/bundledtheme/*`、`web/install/install.go` | 误在存量实例上 seed/改写主题；半解压残留；覆盖用户已删除的主题；安装失败残留半成品主题 | **只在全新安装（零用户）路径调用**；`data/theme/<short>` 已存在时绝不覆盖；解压走临时目录 + 原子 rename；任何失败都不得让安装失败（仅 warning，保持 `default`）；设置写入失败时只回滚 `Result.Created` 的目录（先校验路径形状 + manifest，绝不误删已存在的主题） |
-| CI / 发布 | 🟡 | `.github/workflows/*` | 覆盖不可变 tag、误发版 | 遵守 `MAINTENANCE_POLICY.md` §9 |
+| CI / 发布 | 🟡 | `.github/workflows/*`、`scripts/release-*.sh` | 覆盖不可变 tag、从非 `stable` commit 误发版、跳过必需检查 | 遵守 `MAINTENANCE_POLICY.md` §9；preflight 只能从受保护的 `stable` 运行 |
 
 ## 上游已知未修复问题（记录，不必然要修）
 

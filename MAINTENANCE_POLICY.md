@@ -49,6 +49,7 @@
 | 固定版本镜像 tag（`ghcr.io/xinian5216/komari-stable:v1.5.0-stable.N`） | tag 已存在 → 直接 FAIL；一经发布不得指向新的 digest。 |
 | 浮动镜像 tag（`...:stable`） | 允许随最新正式 Release 更新。 |
 | `workflow_dispatch` | 只能**补齐缺失资产**；不提供"覆盖重发"的能力。 |
+| 发布来源 | preflight 必须来自受保护的 `stable`；tag commit 不在 `stable` 历史中，或该 commit 的四个必需检查未全部成功时，立即 FAIL 且不构建/上传。 |
 
 已公开的产物若确实有问题：**发布下一个版本**（例如 `v1.5.0-stable.2`），不要重写已发布的 tag 或资产。
 守卫本身只读不写旧产物：它不会删除任何资产或 tag。
@@ -118,7 +119,8 @@ Issue → 复现 → 根因 → 写失败测试（failing test） → 最小修�
 ## 9. 发布规程
 
 1. 更新 `CHANGELOG.md`（Fixed / Security / Compatibility / Upgrade / Rollback 五段齐全）。
-2. 打 tag `1.5.0-stable.N` 并创建 GitHub Release；资产 = 各平台二进制。
+2. 只在四个必需检查全部成功的 `stable` commit 上打 tag `v1.5.0-stable.N` 并创建 GitHub Release；
+   release preflight 会再次核对 tag 的 `stable` 祖先关系及该精确 commit 的检查结果，失败则不构建或上传。
 3. Docker：
    - 浮动 tag `stable` 指向最新稳定发布；
    - 不可变 tag `1.5.0-stable.N` **永不覆盖**。

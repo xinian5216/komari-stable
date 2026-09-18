@@ -9,6 +9,8 @@ name: Komari Stable Release
 #   2) Go 版本显式固定；
 #   3) 汇总生成 SHA256SUMS 并上传到 release；
 #   4) 上传前按不可变规则校验（缺失才补、一致才跳过、不一致即失败）。
+#   5) 构建前从受保护的 stable 读取 release preflight，拒绝非 stable 历史或
+#      未通过全部必需检查的 tag commit。
 #
 # 不可变性的执行者（scripts/release-guard.sh）必须来自**被发布的那个 tag 自己**：
 #   * release event -> checkout release tag；
@@ -37,6 +39,7 @@ on:
 
 permissions:
   contents: write
+  checks: read
   packages: write
 
 env:
@@ -49,7 +52,32 @@ env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
+  release-preflight:
+    name: Release provenance preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      # 安全边界：preflight 必须来自受保护的 stable，而不是待验证的 tag。
+      # 否则任意临时分支都能在自己的 tag 中篡改校验程序后自我放行。
+      - uses: actions/checkout@v4
+        with:
+          ref: stable
+          fetch-depth: 0
+      - name: Require stable ancestry and successful required checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash scripts/release-preflight.sh \
+            "${{ github.repository }}" \
+            "${RELEASE_TAG}" \
+            stable \
+            required-gate admin-sw-gate security-gate secret-gate
+
   prepare-assets:
+    needs: release-preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
