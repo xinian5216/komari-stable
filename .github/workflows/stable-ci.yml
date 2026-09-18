@@ -25,6 +25,7 @@ env:
   # 仓库、tag、commit、asset、sha256 只有一份事实来源，见 scripts/prepare-assets.py。
   ASSETS_ARTIFACT: komari-assets
   GO_VERSION: "1.25.x"
+  GOVULNCHECK_VERSION: "v1.1.4"
   ZIG_VERSION: "0.14.1"
 
 jobs:
@@ -106,7 +107,7 @@ jobs:
           cache: true
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
           govulncheck ./...
           # 说明：出现"代码可达"漏洞时该步骤失败——这正是希望被看到的结果；
           # 修复以独立的 security:/build: 提交进入，不在本 job 内自动升级依赖。
@@ -161,3 +162,17 @@ jobs:
           name: komari-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             komari-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  required-gate:
+    name: required-gate
+    if: ${{ always() }}
+    needs: [agent-index, prepare-assets, test, vuln, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every stable CI gate
+        run: |
+          test "${{ needs.agent-index.result }}" = success
+          test "${{ needs.prepare-assets.result }}" = success
+          test "${{ needs.test.result }}" = success
+          test "${{ needs.vuln.result }}" = success
+          test "${{ needs.build.result }}" = success

@@ -59,3 +59,12 @@ jobs:
         env:
           KOMARI_BIN: ${{ github.workspace }}/komari
         run: npx playwright test
+
+  admin-sw-gate:
+    name: admin-sw-gate
+    if: ${{ always() }}
+    needs: [playwright]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the real-browser admin regression
+        run: test "${{ needs.playwright.result }}" = success

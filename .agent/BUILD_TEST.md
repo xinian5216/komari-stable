@@ -81,6 +81,8 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 
 ## 6. CI 对应关系
 
+分支保护的固定检查名称与失败策略见 `.github/REQUIRED_CHECKS.md`。
+
 | 目的 | 本地命令 | CI |
 | --- | --- | --- |
 | 测试 + vet | 第 3 节 | `stable-ci.yml` 的 `test` 作业 |
