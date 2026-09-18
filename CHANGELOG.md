@@ -16,6 +16,11 @@
 
 ### Fixed / Security
 
+- **theme=next 时后台被 Service Worker 显示成公开首页**：fresh install 仍默认 `theme=next`，`/` 仍由
+  Komari Next 提供。`/admin`、`/terminal`、`/manage` 等核心路径强制使用嵌入式 default frontend，
+  并从 HTML 中去掉根作用域 SW 注册。`/sw.js` 与 `/registerSW.js` 不被公开主题覆盖；升级后的
+  `/sw.js` 在 Workbox 脚本前追加 core-route network bypass（不改写生成代码），旧 fallback
+  不再把 Next 首页当成 `/admin` 返回。浏览器 E2E 见 `e2e/`。
 - **原地迁移改为可验证的离线事务**：目标二进制先在旧服务运行期间下载并强制校验本仓库发布的
   `.sha256` / `SHA256SUMS`；通过磁盘空间门禁后才停止服务，离线打包并验证 `data/`，不再在线复制
   SQLite/WAL。历史二进制备份不再在迁移前删除。
@@ -25,6 +30,14 @@
 - **迁移文档与门禁校准**：Agent 最低安全建议统一为 1.5.0；AI Agent 索引修正真实 `configs`
   表名并补齐 capability 三态、远控门禁和迁移风险。Web、Agent、Komari Next 三个配套仓库新增
   各自的 `AGENTS.md`。
+
+### Changed
+
+- **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
+  从 `komari-web-stable@v1.5.0-stable.1`（`b69e706`）更新为
+  `komari-web-stable@v1.5.0-stable.2`（`6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d`，不可变 tag）。
+  该前端把 `/admin`、`/terminal`、`/manage`、`/install`、`/database-recovery` 移出
+  Workbox navigation fallback。随包首选主题 `komari-next-stable@v1.4.19-stable.1` **保持不变**。
 
 ### Compatibility
 

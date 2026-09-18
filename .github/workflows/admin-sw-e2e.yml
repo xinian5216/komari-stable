@@ -1,0 +1,70 @@
+name: Admin service worker E2E
+
+# Real-browser regression for theme=next: `/` stays Komari Next while `/admin`
+# stays on the embedded default frontend even after a Service Worker is present.
+
+on:
+  pull_request:
+  push:
+    branches: [stable]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-sw-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.25.x"
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install zstd
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+
+      - name: Prepare build assets (lock-driven)
+        run: python3 scripts/prepare-assets.py all
+
+      - name: Build the server
+        run: CGO_ENABLED=1 go build -trimpath -o komari .
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install chromium --with-deps
+
+      - name: Run admin / Service Worker E2E
+        working-directory: e2e
+        env:
+          KOMARI_BIN: ${{ github.workspace }}/komari
+        run: npx playwright test
+
+  admin-sw-gate:
+    name: admin-sw-gate
+    if: ${{ always() }}
+    needs: [playwright]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the real-browser admin regression
+        run: test "${{ needs.playwright.result }}" = success

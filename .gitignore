@@ -39,6 +39,14 @@ komari
 
 /web/filemanager/data
 
+# Playwright E2E
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+e2e/playwright/.cache/
+e2e/.run.json
+
 # ============================================================
 # Komari Stable: hardened ignores (file-shaped patterns only —
 # never substring globs that could hide real source files)

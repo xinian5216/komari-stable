@@ -1,6 +1,7 @@
 package public
 
 import (
+	"bytes"
 	"embed"
 	"io/fs"
 	"mime"
@@ -85,7 +86,83 @@ func replaceHTMLLanguage(htmlStr, language string) string {
 }
 
 func stripServiceWorkerRegistration(html string) string {
-	return strings.ReplaceAll(html, `<script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>`, "")
+	html = strings.ReplaceAll(html, `<script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>`, "")
+	html = strings.ReplaceAll(html, `<script src="/registerSW.js"></script>`, "")
+	return html
+}
+
+func hasPathPrefix(reqPath, prefix string) bool {
+	return reqPath == prefix || strings.HasPrefix(reqPath, prefix+"/")
+}
+
+// isCoreFrontendPath reports routes that must always be served by the embedded
+// default frontend. The active public theme (including bundled Next) owns the
+// public homepage, not admin / terminal / recovery documents.
+func isCoreFrontendPath(reqPath string) bool {
+	return hasPathPrefix(reqPath, "/admin") ||
+		hasPathPrefix(reqPath, "/terminal") ||
+		hasPathPrefix(reqPath, "/manage") ||
+		hasPathPrefix(reqPath, "/install") ||
+		hasPathPrefix(reqPath, "/database-recovery")
+}
+
+// isEmbeddedCoreAssetPath reports PWA control files of the embedded default
+// frontend. Public theme hashed bundles (/assets/entry-*, /assets/chunk-*) are
+// not intercepted: missing names already fall back to embed, and a third-party
+// theme that uses the same Vite naming must keep its own files.
+func isEmbeddedCoreAssetPath(reqPath string) bool {
+	clean := path.Clean("/" + strings.TrimPrefix(reqPath, "/"))
+	switch clean {
+	case "/sw.js", "/registerSW.js":
+		return true
+	}
+	base := path.Base(clean)
+	return strings.HasPrefix(base, "workbox-") && strings.HasSuffix(base, ".js")
+}
+
+const coreRouteServiceWorkerBypassMarker = "komari-core-route-sw-bypass-v1"
+
+// coreRouteServiceWorkerBypass is prepended as its own fetch listener. The
+// original Workbox body is not parsed or rewritten; the first respondWith wins
+// for core navigations.
+var coreRouteServiceWorkerBypass = []byte(`/* komari-core-route-sw-bypass-v1 */
+self.addEventListener("fetch", function (event) {
+  if (event.request.mode !== "navigate") {
+    return;
+  }
+  try {
+    var path = new URL(event.request.url, self.location.href).pathname;
+    if (/^\/(admin|terminal|manage|install|database-recovery)(?:\/|$)/.test(path)) {
+      event.respondWith(fetch(event.request));
+    }
+  } catch (e) {}
+});
+`)
+
+func failClosedCoreRouteServiceWorker() []byte {
+	out := make([]byte, 0, len(coreRouteServiceWorkerBypass)+160)
+	out = append(out, coreRouteServiceWorkerBypass...)
+	out = append(out, []byte(`
+self.addEventListener("install", function (event) { event.waitUntil(self.skipWaiting()); });
+self.addEventListener("activate", function (event) { event.waitUntil(self.clients.claim()); });
+`)...)
+	return out
+}
+
+func ensureCoreRouteServiceWorker(js []byte) []byte {
+	if bytes.Contains(js, []byte(coreRouteServiceWorkerBypassMarker)) {
+		return js
+	}
+	if len(bytes.TrimSpace(js)) == 0 {
+		return failClosedCoreRouteServiceWorker()
+	}
+	out := make([]byte, 0, len(coreRouteServiceWorkerBypass)+len(js))
+	out = append(out, coreRouteServiceWorkerBypass...)
+	out = append(out, js...)
+	if !bytes.Contains(out, []byte(coreRouteServiceWorkerBypassMarker)) {
+		return failClosedCoreRouteServiceWorker()
+	}
+	return out
 }
 
 // isSafePath 验证路径是否在指定的基础目录内，防止路径穿透攻击
@@ -205,9 +282,12 @@ func static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc), force
 
 		currentTheme := cfg[config.ThemeKey].(string)
 		shouldReplace := true
+		isCoreRoute := forceDefaultTheme || isCoreFrontendPath(reqPath)
 
-		// 特殊页面：强制使用 default 主题，且不进行内容替换
-		if forceDefaultTheme || strings.HasPrefix(reqPath, "/admin") || strings.HasPrefix(reqPath, "/terminal") {
+		// Core admin/terminal/recovery documents always use the embedded default
+		// frontend. The public theme (Next or a custom theme) must not replace them,
+		// and they must not register a root-scoped Service Worker.
+		if isCoreRoute {
 			currentTheme = DefaultTheme
 			shouldReplace = false
 		}
@@ -222,7 +302,7 @@ func static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc), force
 		}
 
 		htmlStr := string(content)
-		if forceDefaultTheme {
+		if isCoreRoute {
 			htmlStr = stripServiceWorkerRegistration(htmlStr)
 		}
 		if language, err := c.Cookie(LanguageCookieName); err == nil {
@@ -342,7 +422,7 @@ func static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc), force
 		reqPath := c.Request.URL.Path
 		cfg := getConfig()
 		currentTheme := cfg[config.ThemeKey].(string)
-		if forceDefaultTheme {
+		if forceDefaultTheme || isEmbeddedCoreAssetPath(reqPath) {
 			currentTheme = DefaultTheme
 		}
 
@@ -350,6 +430,18 @@ func static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc), force
 		distPath := path.Join(DistDir, reqPath)
 
 		content, mimeType, exists := getFileContent(currentTheme, distPath)
+		if path.Base(reqPath) == "sw.js" {
+			c.Header("Cache-Control", "no-cache")
+			if !exists {
+				content = nil
+				mimeType = "application/javascript"
+			}
+			if mimeType == "" {
+				mimeType = "application/javascript"
+			}
+			c.Data(http.StatusOK, mimeType, ensureCoreRouteServiceWorker(content))
+			return
+		}
 		if exists {
 			c.Data(http.StatusOK, mimeType, content)
 			return
