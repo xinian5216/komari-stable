@@ -23,7 +23,7 @@ jobs:
   fresh-install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v5
         with:
@@ -194,7 +194,7 @@ jobs:
           - case: bad-manifest
             tamper: bad-manifest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -296,7 +296,7 @@ jobs:
           - case: theme-next
           - case: theme-custom
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0          # 升级对照需要 v1.5.0-stable.0 这个 tag 的完整历史
 
