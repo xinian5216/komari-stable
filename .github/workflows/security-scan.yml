@@ -3,12 +3,6 @@ name: Security Scan
 on:
   push:
     branches: [stable]
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/actions/**"
-      - ".github/workflows/security-scan.yml"
   pull_request:
     branches: [stable]
   schedule:

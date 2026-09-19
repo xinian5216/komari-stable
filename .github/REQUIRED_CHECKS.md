@@ -6,7 +6,9 @@ Required contexts: `required-gate`, `admin-sw-gate`, `security-gate`,
 `secret-gate`.
 Each aggregation job runs with `always()` and accepts only `success` from every
 dependency. Failure, cancellation, or skipped dependencies must block merging.
-Security scanning runs on every PR to stable, including documentation changes.
+Security scanning runs on every PR to stable and every push to stable, including
+documentation changes. The push run is required because squash merging creates a
+new commit SHA; release preflight verifies checks for that exact stable SHA.
 Use GitHub Actions as the required check source.
 
 These checks cover the existing CI, the real-browser Next/admin Service Worker
