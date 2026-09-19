@@ -7,9 +7,29 @@ name: Anonymous end-to-end install rehearsal
 #   4. 用面板生成的那条命令（匿名 raw 地址）安装 Agent
 #   5. 启动 Agent，验证节点上线
 #   6. 验证版本、Server/Agent 的升级检查地址、Web 正常加载
-# 公开后由 workflow_dispatch 手动触发。
+# 可手动触发，也由 stable-ci 作为必过的可复用工作流调用。
 
 on:
+  workflow_call:
+    inputs:
+      server_repo:
+        required: false
+        type: string
+        default: xinian5216/komari-stable
+      agent_repo:
+        required: false
+        type: string
+        default: xinian5216/komari-agent-stable
+      branch:
+        description: "Server Git ref that carries install-komari.sh"
+        required: false
+        type: string
+        default: stable
+      agent_branch:
+        description: "Agent Git ref that carries install.sh"
+        required: false
+        type: string
+        default: stable
   workflow_dispatch:
     inputs:
       server_repo:
@@ -21,7 +41,11 @@ on:
         default: xinian5216/komari-agent-stable
         type: string
       branch:
-        description: "Branch that carries the install scripts"
+        description: "Server Git ref that carries install-komari.sh"
+        default: stable
+        type: string
+      agent_branch:
+        description: "Agent Git ref that carries install.sh"
         default: stable
         type: string
 
@@ -35,6 +59,7 @@ jobs:
       SERVER_REPO: ${{ inputs.server_repo }}
       AGENT_REPO: ${{ inputs.agent_repo }}
       SCRIPT_BRANCH: ${{ inputs.branch }}
+      AGENT_SCRIPT_BRANCH: ${{ inputs.agent_branch }}
       PORT: "25774"
     steps:
       - name: Drop every credential (anonymous viewpoint)
@@ -150,7 +175,7 @@ jobs:
           NODE_TOKEN=$(cat /tmp/node-token.txt)
           # 面板生成的命令即：<raw>/install.sh | sudo bash -s -- -e <endpoint> -t <token>
           curl -fsSL -o /tmp/agent-install.sh \
-            "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
+            "https://raw.githubusercontent.com/${AGENT_REPO}/${AGENT_SCRIPT_BRANCH}/install.sh"
           # 安装脚本的来源必须是本 fork（owner/name 以默认值形式声明），且不得再出现上游仓库
           grep -q 'REPO_OWNER:-xinian5216' /tmp/agent-install.sh
           grep -q 'REPO_NAME:-komari-agent-stable' /tmp/agent-install.sh
@@ -218,7 +243,7 @@ jobs:
           curl -fsS -m 20 "https://api.github.com/repos/${AGENT_REPO}/releases/latest" \
             | python3 -c "import json,sys; d=json.load(sys.stdin); print('latest:', d['tag_name']); print('assets:', [a['name'] for a in d['assets']])"
           echo "--- Agent 安装脚本的来源（匿名 raw）---"
-          curl -fsSL -o /tmp/agent-install.sh "https://raw.githubusercontent.com/${AGENT_REPO}/${SCRIPT_BRANCH}/install.sh"
+          curl -fsSL -o /tmp/agent-install.sh "https://raw.githubusercontent.com/${AGENT_REPO}/${AGENT_SCRIPT_BRANCH}/install.sh"
           grep -n "REPO_OWNER=\|REPO_NAME=" /tmp/agent-install.sh
           echo "--- 装到本机的二进制是否就是最新 Release（即 Server update check 的结论）---"
           latest_tag="$(curl -fsS -m 20 "https://api.github.com/repos/${SERVER_REPO}/releases/latest" | python3 -c "import json,sys;print(json.load(sys.stdin)['tag_name'])")"

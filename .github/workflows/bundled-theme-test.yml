@@ -7,17 +7,8 @@ name: Bundled theme test (fresh install / seed failures / upgrades)
 #   3. upgrade-matrix —— 存量实例（theme=default / next / custom）升级：配置与主题目录逐项不变
 
 on:
+  workflow_call:
   workflow_dispatch:
-  push:
-    paths:
-      - "internal/themebundle/**"
-      - "internal/bundledtheme/**"
-      - "web/install/**"
-      - "web/public/bundled.go"
-      - "web/api/admin/theme.go"
-      - "bundled-themes.lock.json"
-      - "scripts/prepare-assets.py"
-      - ".github/workflows/bundled-theme-test.yml"
 
 permissions:
   contents: read

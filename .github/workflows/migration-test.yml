@@ -7,11 +7,8 @@ name: Migration test (official install -> Komari Stable)
 # 只读、无 secrets；所有改动都发生在这台 runner 上。
 
 on:
+  workflow_call:
   workflow_dispatch:
-  push:
-    paths:
-      - "install-komari.sh"
-      - ".github/workflows/migration-test.yml"
 
 permissions:
   contents: read

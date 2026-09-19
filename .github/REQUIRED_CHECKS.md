@@ -11,8 +11,12 @@ documentation changes. The push run is required because squash merging creates a
 new commit SHA; release preflight verifies checks for that exact stable SHA.
 Use GitHub Actions as the required check source.
 
-These checks cover the existing CI, the real-browser Next/admin Service Worker
-regression, dependency/CodeQL analysis and secret scans. `stable-release.yml`
+These checks cover the existing CI, the anonymous installation rehearsal, the
+official-1.4.3 migration rehearsal, the bundled-theme fresh-install/failure/upgrade
+matrix, the real-browser Next/admin Service Worker regression, dependency/CodeQL
+analysis and secret scans. The three long rehearsals are reusable workflows called
+by `stable-ci.yml`, so their failure reaches the single `required-gate` context.
+`stable-release.yml`
 also reads `scripts/release-preflight.sh` from protected `stable` and refuses to
 build a release unless its immutable tag commit is in `stable` history and the
 four contexts above have succeeded for that exact commit. Additional release

@@ -91,6 +91,9 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 | 密钥扫描 | `gitleaks` | `secret-scan.yml` |
 | 索引一致性 | `python scripts/check_agent_index.py` | `stable-ci.yml` 的 `agent-index` 作业 |
 | 后台 SW E2E | 第 8 节 | `admin-sw-e2e.yml` |
+| 匿名安装演练 | GitHub Actions 可复用工作流 | `anonymous-e2e.yml`，由 `stable-ci.yml` 调用 |
+| 官方 1.4.3 迁移演练 | GitHub Actions 可复用工作流 | `migration-test.yml`，由 `stable-ci.yml` 调用 |
+| 随包主题安装/失败/升级矩阵 | GitHub Actions 可复用工作流 | `bundled-theme-test.yml`，由 `stable-ci.yml` 调用 |
 | 发布（二进制 + Docker） | 第 2/5 节 | `stable-release.yml`（release published 触发） |
 
 发布作业先从受保护的 `stable` 分支运行 `scripts/release-preflight.sh`：正式 tag 必须匹配

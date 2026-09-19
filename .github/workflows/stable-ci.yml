@@ -29,6 +29,22 @@ env:
   ZIG_VERSION: "0.14.1"
 
 jobs:
+  # 这些高价值 E2E 原先只能手动运行或在合并后按路径触发，无法在 PR 合并前阻断。
+  # 作为本工作流的可复用 job 调用后，它们与当前提交绑定，并统一汇总进 required-gate。
+  anonymous-e2e:
+    uses: ./.github/workflows/anonymous-e2e.yml
+    with:
+      server_repo: xinian5216/komari-stable
+      agent_repo: xinian5216/komari-agent-stable
+      branch: ${{ github.sha }}
+      agent_branch: stable
+
+  migration-e2e:
+    uses: ./.github/workflows/migration-test.yml
+
+  bundled-theme-e2e:
+    uses: ./.github/workflows/bundled-theme-test.yml
+
   # 轻量校验：.agent/ 索引文件齐全、PROJECT_MAP 提到的路径存在（不做语义检查，避免误报）
   agent-index:
     runs-on: ubuntu-latest
@@ -169,12 +185,16 @@ jobs:
   required-gate:
     name: required-gate
     if: ${{ always() }}
-    needs: [agent-index, prepare-assets, test, vuln, build]
+    needs:
+      [anonymous-e2e, migration-e2e, bundled-theme-e2e, agent-index, prepare-assets, test, vuln, build]
     runs-on: ubuntu-latest
     steps:
       - name: Require every stable CI gate
         run: |
           test "${{ needs.agent-index.result }}" = success
+          test "${{ needs.anonymous-e2e.result }}" = success
+          test "${{ needs.migration-e2e.result }}" = success
+          test "${{ needs.bundled-theme-e2e.result }}" = success
           test "${{ needs.prepare-assets.result }}" = success
           test "${{ needs.test.result }}" = success
           test "${{ needs.vuln.result }}" = success
