@@ -15,7 +15,7 @@
 
 ## 2. 待办（等仓库/镜像就绪后执行）
 
-1. **前端镜像**：`xinian5216/komari-web-stable`（源自上游 `komari-web`，固定 tag）——✅ 已创建，CI 已按此固定（当前 `v1.5.0-stable.1`）。
+1. **前端镜像**：`xinian5216/komari-web-stable`（源自上游 `komari-web`，固定 tag）——✅ 已创建，CI 已按此固定（当前 `v1.5.0-stable.3`）。
 2. **Agent 镜像（2026-09-16 决策）**：`xinian5216/komari-agent-stable`——✅ 已创建（当前 `v1.5.10-stable.1`），
    安装/更新 URL 已指向该仓库。约束与现状：
    - Agent 侧仍使用 **v2 冻结协议**，改动仅限 Bug/安全修复；服务端必须继续兼容旧 Agent；
