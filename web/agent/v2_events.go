@@ -16,10 +16,6 @@ const (
 	v2EventQueueLimit = 128
 	v2EventTTL        = 5 * time.Minute
 	v2PingEventTTL    = 3 * time.Second
-	// File operations may include a remote read/search with a 90 second
-	// deadline, so queued file commands need a little headroom while an agent
-	// reconnects.
-	v2FileEventTTL = 2 * time.Minute
 )
 
 type v2EventQueue struct {
@@ -48,10 +44,8 @@ var ErrAgentOffline = errors.New("agent offline")
 // DispatchV2Event sends a v2 event to an agent, either directly over its
 // connection or through its event queue.
 //
-// It fails closed on capabilities: an agent that reported not offering the
-// capability a method needs is refused with ErrCapabilityUnavailable instead of
-// receiving a command it would only reject. Agents that reported nothing keep
-// the historical behaviour.
+// Remote-control methods are rejected for every agent by
+// CheckMethodCapability; only monitoring events can reach a connection/queue.
 func DispatchV2Event(uuid, method string, params any) error {
 	if err := CheckMethodCapability(uuid, method); err != nil {
 		return err
@@ -65,7 +59,7 @@ func DispatchV2Event(uuid, method string, params any) error {
 	if !IsV2Client(uuid) {
 		return ErrAgentOffline
 	}
-	EnqueueV2Event(uuid, method, params)
+	enqueueV2Event(uuid, method, params)
 	return nil
 }
 
@@ -79,7 +73,7 @@ func DispatchPing(uuid string, params v2.PingParams) bool {
 	if !IsV2Client(uuid) {
 		return false
 	}
-	EnqueueV2Event(uuid, v2.MethodAgentPing, params)
+	enqueueV2Event(uuid, v2.MethodAgentPing, params)
 	return true
 }
 
@@ -90,13 +84,13 @@ func IsAgentOnline(uuid string) bool {
 	return IsV2Client(uuid)
 }
 
-func EnqueueV2Event(uuid, method string, params any) v2.Event {
+// enqueueV2Event stays private so every generic caller must pass through
+// DispatchV2Event and its remote-control rejection first.
+func enqueueV2Event(uuid, method string, params any) v2.Event {
 	now := time.Now().UTC()
 	ttl := v2EventTTL
 	if method == v2.MethodAgentPing {
 		ttl = v2PingEventTTL
-	} else if method == v2.MethodAgentFile {
-		ttl = v2FileEventTTL
 	}
 	event := v2.Event{
 		ID:        newV2EventID(),
@@ -144,13 +138,6 @@ func coalesceV2EventLocked(q *v2EventQueue, event v2.Event) {
 }
 
 func v2EventCoalesceKey(event v2.Event) string {
-	if event.Method == v2.MethodAgentTerminal {
-		var params v2.TerminalRequestParams
-		if err := bindV2EventParams(event.Params, &params); err == nil && params.RequestID != "" {
-			return event.Method + ":" + params.RequestID
-		}
-		return ""
-	}
 	if event.Method != v2.MethodAgentPing {
 		return ""
 	}

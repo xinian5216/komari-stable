@@ -43,14 +43,12 @@ type Client struct {
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 
-	// Runtime-only fields: what the agent reported about its remote control
-	// capabilities. They are never persisted, so the database schema and the
-	// stored data stay unchanged.
+	// Runtime-only fields: filtered monitoring capability metadata. Remote
+	// control values are discarded and these fields are never persisted.
 	Capabilities   []string `json:"capabilities,omitempty" gorm:"-"`
 	PrivilegeLevel string   `json:"privilege_level,omitempty" gorm:"-"`
-	// RemoteControlKnown is true when the agent reported capabilities. Panels
-	// use it to distinguish "remote control disabled" from "older agent that
-	// reported nothing".
+	// RemoteControlKnown is always exposed as true by current server responses so
+	// older panels treat remote control as unavailable for every agent.
 	RemoteControlKnown bool `json:"remote_control_known,omitempty" gorm:"-"`
 }
 

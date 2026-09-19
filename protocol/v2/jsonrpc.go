@@ -82,9 +82,8 @@ type Report struct {
 	Method      string            `json:"method,omitempty"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 
-	// Remote control capabilities an agent advertises. The report is parsed
-	// into this struct, so servers that predate the fields ignore them; basic
-	// info cannot carry them because it is mapped onto SQL columns.
+	// Optional capability metadata retained for wire compatibility. Current
+	// servers discard exec/terminal/file values; older servers ignore the fields.
 	Capabilities   []string `json:"capabilities,omitempty"`
 	PrivilegeLevel string   `json:"privilege_level,omitempty"`
 }
@@ -188,8 +187,8 @@ type TerminalRequestParams struct {
 	RequestID string `json:"request_id"`
 }
 
-// FileOperation is metadata-only. File contents travel through the dedicated
-// HTTP transfer endpoint rather than through JSON-RPC.
+// FileOperation and FileResult remain as wire-compatibility types for old
+// agents. Current servers never dispatch file operations and ignore results.
 type FileOperation struct {
 	UUID      string         `json:"uuid"`
 	RequestID string         `json:"request_id"`

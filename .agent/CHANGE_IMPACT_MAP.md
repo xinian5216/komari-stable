@@ -48,11 +48,9 @@ CHANGELOG 的 Compatibility 段
 
 认证/会话（web/api/Auth.go、accounts/sessions）
    ↓
-终端会话归属校验（terminal 会话 id 与 client_uuid 绑定）
-   ↓
-文件传输令牌校验
-   ↓
 管理端所有 /api/admin/* 与 RPC admin: 方法
+   ↓
+已移除远控路径的 410 tombstone 与 RPC 注销边界
 ```
 
 ## 2. 快速对照表
@@ -63,11 +61,11 @@ CHANGELOG 的 Compatibility 段
 | `internal/migrations/*` | 旧库升级演练、版本标记、`CHANGELOG` Compatibility/Rollback |
 | `pkg/metric/*` | 指标迁移、维护作业、查询接口、大库性能、回滚可行性 |
 | `protocol/v2/*` | Agent 兼容、`web/api/client/*`、文档 `AGENT_PROTOCOL.md`、`komari-protocol` 对照 |
-| Agent capability / 远控门禁 | `agent_runtime` 内存态、`admin:getNodes`、任务下发、终端/文件 RPC、`komari-web-stable` 三态 UI |
+| Agent capability / 远控边界 | capability 过滤、事件下发拒绝、旧结果丢弃、410 tombstone、RPC 注销、前端入口移除 |
 | `web/router/router.go` | API.md、权限矩阵（RequireRole）、前端调用点 |
 | `web/rpc/jsonrpc/*` | RPC2 方法名（冻结）、`rpc.methods` 输出、前端调用、插件 `server.call` 可用范围 |
-| `web/api/terminal/*` | 会话所有权校验、Origin 校验、2FA 流程、Agent 侧 `agent.terminal.request` |
-| `web/filemanager/*`、`web/upload/*` | 路径规范化、令牌归属、大小限制、预览下载令牌 |
+| 远控移除守卫 | `scripts/check_remote_control_removed.py`、路由测试、RPC 注册测试、旧 Agent 兼容测试 |
+| `web/upload/*` | 本地管理上传的路径规范化、大小限制与归档校验 |
 | `internal/plugin/*`、`pkg/jsruntime/*` | 权限清单、市场下载（SSRF）、插件 API 稳定性（插件生态依赖） |
 | `internal/config/settings.go` | 默认值变更影响（用户可见）、`/api/public` 输出、前端设置页 |
 | `web/security/*` | CORS/Origin 行为、API Key 例外规则、前端跨域部署场景 |

@@ -33,30 +33,29 @@ Agent 启动
 | Agent→Server | `agent.report` | 实时监控数据；可选上报 `capabilities` / `privilege_level`（Stable.2 增量） |
 | Agent→Server | `agent.basicInfo` | 静态信息（os/kernel/arch/cpu/内存/磁盘/GPU/ipv4/ipv6/version） |
 | Agent→Server | `agent.pingResult` | ping 探测结果 |
-| Agent→Server | `agent.taskResult` | 远程执行结果（含 exit_code / finished_at RFC3339） |
+| Agent→Server | `agent.taskResult` | 兼容保留：服务端确认后丢弃，不解析、不入库 |
 | Agent→Server | `agent.event` / `agent.pull` | 事件上报 / POST fallback 长轮询拉取 |
-| Agent→Server | `agent.file` / `agent.file.result` | 文件管理相关 |
-| Server→Agent | `agent.exec` / `agent.ping` / `agent.message` / `agent.event` | 下发消息（message 字段区分类型） |
-| Server→Agent | `agent.terminal.request` | 请求 Agent 建立独立终端 WS（`/api/clients/terminal?id=`） |
+| Agent→Server | `agent.file` / `agent.file.result` | 兼容保留：服务端确认后丢弃 |
+| Server→Agent | `agent.ping` / `agent.message` / `agent.event` | 允许下发的监控与消息事件 |
+| Server→Agent | `agent.exec` / `agent.terminal.request` / `agent.file` | 仅保留协议常量；服务端永不下发 |
 
 事件结构（`protocol/v2/jsonrpc.go:Event`）：`id / method / params / created_at / expires_at`；
 Agent 通过下次 `agent.report` 的 `ack_event_ids` 确认；服务端保证 at-least-once，Agent 需按 id 幂等。
 
-## 4. capability 与远程控制三态
+## 4. capability 与远程控制移除边界
 
-- capability 仅保存在 `internal/agent_runtime` 内存态，并通过管理员节点 DTO 暴露；数据库 Schema 不变。
+- capability 仅保存在 `web/agent` 内存态，并通过管理员节点 DTO 暴露；数据库 Schema 不变。
 - 新 Agent 在 `agent.report` 中上报实际能力和权限级别；字段可选，旧 Agent 不发送时仍可连接。
-- `remote_control_known=true` 且缺少 `exec` / `terminal` / `file` 时，Server 必须在下发侧拒绝对应操作，
-  Web 同时隐藏或禁用入口。
-- `remote_control_known=false` 表示旧 Agent/尚未首次上报，必须保持历史行为，不能按“明确禁用”处理。
-- capability 是安全门禁的一部分但不是鉴权替代品；token、角色、会话归属与 Origin 校验仍必须通过。
+- 服务端丢弃 `exec` / `terminal` / `file` capability；无论 Agent 是否上报、是否为旧版本，都不会恢复远控。
+- `remote_control_known` DTO 字段与远控方法常量仅为旧前端/旧 Agent 兼容保留，不能作为重新开放入口的依据。
+- 旧 Agent 仍可连接、上报监控、执行 ping，并接收普通消息；发送的旧任务/文件结果会收到成功确认后被忽略。
 
 ## 5. 其它通道
 
 | 通道 | 端点 | 说明 |
 | --- | --- | --- |
-| 终端流量 | `GET /api/clients/terminal?id=<session>`（WS） | 会话 ID 由 `agent.terminal.request` 协商；代码 `web/api/terminal/*` |
-| 文件传输 | `GET|POST /api/clients/transfer/:id` | 短时令牌 + 原始流（`web/filemanager/transfer.go`） |
+| 旧终端流量 | `GET /api/clients/terminal` | 已移除，固定返回 `410 Gone` |
+| 旧文件传输 | `GET|POST /api/clients/transfer/:id` | 已移除，固定返回 `410 Gone` |
 | 前端实时 | `GET /api/clients`（WS） | 面向浏览器的只读数据流 |
 
 ## 6. 版本兼容要求（改代码前必读）
@@ -64,7 +63,7 @@ Agent 通过下次 `agent.report` 的 `ack_event_ids` 确认；服务端保证 a
 1. **不得**修改 `protocol/v2` 中的方法与字段名；新增字段必须可选、旧 Agent 可忽略。
 2. 服务端必须同时接受 WS 与 POST 两种传输，且 POST 响应里的 `result.events[]` 语义不变。
 3. `agent.report` 缺失/多出字段要能容错（旧 Agent 不发送 GPU 等新字段）。
-4. capability 必须保持可选与三态语义；不得要求旧 Agent 必须上报，也不得仅靠前端隐藏实现安全门禁。
+4. capability 仍可选；服务端必须过滤远控 capability，并以路由 tombstone、RPC 注销和事件下发拒绝三层门禁阻止恢复。
 5. Server 版本与 Agent 版本**解耦**：Agent 由本 fork 的 `xinian5216/komari-agent-stable` 独立发版
    （安装/更新通道同指向该仓库）；上游 `komari-agent` 仅作为择优移植来源。协议仍冻结为本文档描述的 v2。
 6. 涉及协议改动的 PR：同步更新本文件 + `CHANGELOG.md` 的 Compatibility 段。

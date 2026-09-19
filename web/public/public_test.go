@@ -150,7 +150,6 @@ func TestHasPathPrefix(t *testing.T) {
 		{path: "/admin/", prefix: "/admin", want: true},
 		{path: "/admin/dashboard", prefix: "/admin", want: true},
 		{path: "/administration", prefix: "/admin", want: false},
-		{path: "/terminal", prefix: "/terminal", want: true},
 		{path: "/", prefix: "/admin", want: false},
 	}
 	for _, tt := range tests {
@@ -180,8 +179,6 @@ func TestIsCoreFrontendPath(t *testing.T) {
 		"/admin",
 		"/admin/dashboard",
 		"/admin/database-migration",
-		"/terminal",
-		"/terminal/session",
 		"/manage",
 		"/manage/nodes",
 		"/install",
@@ -211,6 +208,9 @@ func TestEnsureCoreRouteServiceWorker(t *testing.T) {
 	}
 	if !bytes.Contains(patched, workbox) {
 		t.Fatal("patched service worker dropped the original Workbox script")
+	}
+	if !bytes.Contains(patched, []byte("admin|terminal|manage")) {
+		t.Fatal("service worker must send the removed terminal route to the server tombstone")
 	}
 	if !bytes.Equal(ensureCoreRouteServiceWorker(patched), patched) {
 		t.Fatal("core-route bypass was applied twice")
@@ -299,7 +299,7 @@ func TestThemeNextKeepsPublicHomeAndIsolatesCoreFrontend(t *testing.T) {
 		t.Fatal("GET / served the embedded default frontend")
 	}
 
-	corePaths := []string{"/admin", "/admin/dashboard", "/terminal", "/manage"}
+	corePaths := []string{"/admin", "/admin/dashboard", "/manage"}
 	for _, path := range corePaths {
 		code, body := get(path)
 		if code != 200 {
@@ -334,7 +334,7 @@ func TestThemeNextKeepsPublicHomeAndIsolatesCoreFrontend(t *testing.T) {
 	if code, body := get("/" + themeOwnedEntry); code != 200 || !strings.Contains(body, "THEME_OWNED_ENTRY") {
 		t.Fatalf("GET /%s status=%d body=%q, want the public theme file", themeOwnedEntry, code, trimForTest(body))
 	}
-	if code, body := get("/"+hashedEntry); code != 200 {
+	if code, body := get("/" + hashedEntry); code != 200 {
 		t.Fatalf("GET /%s status = %d", hashedEntry, code)
 	} else if strings.Contains(body, "NEXT_PUBLIC_HOME") || strings.Contains(body, "THEME_OWNED_ENTRY") {
 		t.Fatalf("GET /%s did not fall back to the embedded default bundle", hashedEntry)

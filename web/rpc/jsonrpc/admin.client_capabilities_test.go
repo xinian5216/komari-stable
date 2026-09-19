@@ -26,11 +26,11 @@ func TestAttachReportedCapabilities(t *testing.T) {
 	}
 }
 
-func TestAttachReportedCapabilitiesLeavesLegacyClientsAlone(t *testing.T) {
+func TestAttachReportedCapabilitiesHidesRemoteControlForLegacyClients(t *testing.T) {
 	client := models.Client{UUID: "attach-legacy"}
 	attachReportedCapabilities(&client)
 
-	if client.RemoteControlKnown || client.Capabilities != nil || client.PrivilegeLevel != "" {
-		t.Fatalf("legacy client was modified: %+v", client)
+	if !client.RemoteControlKnown || client.Capabilities != nil || client.PrivilegeLevel != "" {
+		t.Fatalf("legacy client did not receive the removal marker: %+v", client)
 	}
 }

@@ -473,6 +473,14 @@ func doInitialize() error {
 	); err != nil {
 		logger.Errorf("dbcore", "Failed to create Task and TaskResult table, it may already exist: %v", err)
 	}
+	if cancelled, err := cancelPendingRemoteControlTasks(instance, time.Now().UTC()); err != nil {
+		// Dispatch and API paths have already been removed, so an update failure
+		// cannot make a task executable. Keep monitoring available and report the
+		// compatibility cleanup failure loudly.
+		logger.Errorf("dbcore", "Failed to cancel legacy remote-control tasks: %v", err)
+	} else if cancelled > 0 {
+		logger.Warnf("dbcore", "Cancelled %d pending legacy remote-control task results", cancelled)
+	}
 
 	return nil
 }

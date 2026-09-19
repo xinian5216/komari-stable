@@ -10,7 +10,7 @@
 | 裸机安装脚本 | `install-komari.sh` | `${RELEASE_BASE}/${REPO}/releases/{latest/download|download/<tag>}`；API `${GITHUB_API_BASE}/repos/${REPO}/releases` | ✅ 已参数化（`REPO_OWNER` / `REPO_NAME` / `RELEASE_BASE` / `GITHUB_API_BASE`，均可用环境变量覆盖） |
 | Docker 镜像 | `.github/workflows/stable-release.yml` → `ghcr.io/${IMAGE_NAME}` | ghcr | ✅ 使用 `${{ github.repository }}`，自动指向 fork |
 | 发布资产（二进制） | `stable-release.yml` | GitHub Release 资产 `komari-<os>-<arch>[.exe]` + `SHA256SUMS` | ✅ 命名与 `install-komari.sh` 期望一致 |
-| Agent 安装命令 | 前端仓库 `xinian5216/komari-web-stable`：`src/lib/repoSources.ts`（集中定义）+ `src/components/admin/NodeTable/NodeFunction.tsx`、`src/pages/admin/index.tsx` | `https://raw.githubusercontent.com/xinian5216/komari-agent-stable/refs/heads/stable/install.{sh,ps1}`（由 `AGENT_INSTALL_RAW_BASE` 生成） | ✅ 已完成；`v1.5.0-stable.1` 起远控显式 opt-in |
+| Agent 安装命令 | 前端仓库 `xinian5216/komari-web-stable`：`src/lib/repoSources.ts`（集中定义）+ `src/components/admin/NodeTable/NodeFunction.tsx`、`src/pages/admin/index.tsx` | `https://raw.githubusercontent.com/xinian5216/komari-agent-stable/refs/heads/stable/install.{sh,ps1}`（由 `AGENT_INSTALL_RAW_BASE` 生成） | ⚠️ 下载源已迁移；远控参数清理由配套前端/Agent 变更完成，Server 已忽略该能力 |
 | 更新说明 | 官方文档 `komari-document`（en/install/update.md） | 上游文档 | ⏳ fork 文档（README.md 已有简述） |
 
 ## 2. 待办（等仓库/镜像就绪后执行）

@@ -9,8 +9,8 @@ import (
 	v2 "github.com/komari-monitor/komari/protocol/v2"
 )
 
-// Capability names as reported by agents. They are duplicated here on purpose:
-// the server has to keep working with agents that report nothing at all.
+// Capability names as reported by agents. Remote-control names remain only as
+// protocol compatibility sentinels and are never accepted or advertised.
 const (
 	CapabilityPing     = "ping"
 	CapabilityMessage  = "message"
@@ -20,17 +20,16 @@ const (
 	CapabilityFile     = "file"
 )
 
-// ErrCapabilityUnavailable is returned when an agent explicitly reported that
-// it does not offer the capability a request needs (for example an agent that
-// runs with remote control disabled).
+// ErrCapabilityUnavailable is returned for protocol methods whose remote-control
+// implementation has been removed from Komari Stable.
 var ErrCapabilityUnavailable = errors.New("capability unavailable")
 
 type reportedCapabilities struct {
 	capabilities   []string
 	privilegeLevel string
-	// reported is false for agents that never told the server what they can do
-	// (older agents, or a server that was restarted and has not seen a report
-	// yet). Such clients keep the historical behaviour.
+	// reported is false for agents that never told the server what they can do.
+	// It is retained for protocol compatibility and monitoring capability data;
+	// it never enables remote control.
 	reported bool
 }
 
@@ -50,7 +49,7 @@ func SetClientCapabilities(uuid string, capabilities []string, privilegeLevel st
 
 	cleaned := make([]string, 0, len(capabilities))
 	for _, capability := range capabilities {
-		if capability = strings.TrimSpace(capability); capability != "" {
+		if capability = strings.TrimSpace(capability); capability != "" && !isRemoteControlCapability(capability) {
 			cleaned = append(cleaned, capability)
 		}
 	}
@@ -90,21 +89,22 @@ func ClientPrivilegeLevel(uuid string) string {
 	return privilegeLevel
 }
 
-// ForgetClientCapabilities drops what was reported for a client. It is used
-// when no report has been seen for a while so the client falls back to the
-// legacy behaviour instead of being blocked by stale information.
+// ForgetClientCapabilities drops runtime-only capability metadata for a client.
 func ForgetClientCapabilities(uuid string) {
 	capabilityMu.Lock()
 	defer capabilityMu.Unlock()
 	delete(capabilityStore, uuid)
 }
 
-// HasCapability reports whether a method may be sent to the agent. Agents that
-// reported nothing are always allowed: the server must not suddenly stop
-// sending remote control commands to installations that predate capabilities.
+// HasCapability reports whether a non-remote capability was advertised.
+// Remote control is permanently unavailable even for legacy agents that never
+// reported a capability list.
 func HasCapability(uuid, capability string) bool {
 	if capability == "" {
 		return true
+	}
+	if isRemoteControlCapability(capability) {
+		return false
 	}
 	capabilities, _, reported := ClientCapabilities(uuid)
 	if !reported {
@@ -116,6 +116,15 @@ func HasCapability(uuid, capability string) bool {
 		}
 	}
 	return false
+}
+
+func isRemoteControlCapability(capability string) bool {
+	switch capability {
+	case CapabilityExec, CapabilityTerminal, CapabilityFile:
+		return true
+	default:
+		return false
+	}
 }
 
 // requiredCapability maps a remote control method to the capability an agent
@@ -134,13 +143,13 @@ func requiredCapability(method string) string {
 	}
 }
 
-// CheckMethodCapability returns ErrCapabilityUnavailable when the agent told the
-// server that it cannot handle method. It is the single place the server
-// decides whether a remote control command may be sent.
+// CheckMethodCapability is the final dispatch backstop. Remote-control methods
+// are rejected for every agent, including old agents that claim support or did
+// not report capabilities at all.
 func CheckMethodCapability(uuid, method string) error {
 	required := requiredCapability(method)
-	if required == "" || HasCapability(uuid, required) {
+	if required == "" {
 		return nil
 	}
-	return fmt.Errorf("%w: agent %s reports no %q capability (remote control is disabled on the agent)", ErrCapabilityUnavailable, uuid, required)
+	return fmt.Errorf("%w: method %q is removed from Komari Stable for agent %s", ErrCapabilityUnavailable, method, uuid)
 }

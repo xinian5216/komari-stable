@@ -18,8 +18,9 @@ protocol/v2/   Agent 线协议定义（JSON-RPC 2.0 方法与结构体，v1 已�
 utils/         通用工具：log、notifier（通知调度）、messageSender（各渠道）、geoip、item、renewal、
                version（构建期注入的版本变量）
 web/           HTTP 层（Gin）：
-               router/ 路由注册；api/（admin/client/public/terminal/upload/backup/install/recovery/migration/oauth）；
-               rpc/jsonrpc/ RPC2 方法实现；filemanager/ 文件管理；upload/ 分块上传；security/ CORS+Origin；
+               router/ 路由注册（含已移除远控路径的 410 tombstone）；
+               api/（admin/client/public/upload/backup/install/recovery/migration/oauth）；
+               rpc/jsonrpc/ RPC2 方法实现；upload/ 本地分块上传；security/ CORS+Origin；
                connection/ 安全 WebSocket 封装；public/ 嵌入的前端主题与静态资源服务
 web/public/    构建期资产嵌入点：
                defaultTheme/  嵌入式核心前端（dist.tar.zst + komari-theme.json，构建期生成，不入库）
@@ -29,7 +30,7 @@ internal/themebundle/   随包主题包的校验与安全解压（sha256/根 man
 internal/bundledtheme/  把随包主题 seed 到 data/theme/<short> 的胶水（只在全新安装路径被调用）
 bundled-themes.lock.json  构建期资产的唯一事实来源（repository/tag/commit/asset/sha256）
 .agent/        AI Agent 索引（本目录）
-scripts/       维护脚本（.agent 索引一致性检查、prepare-assets.py 统一准备构建期资产）
+scripts/       维护脚本（.agent 索引一致性、远控移除守卫、prepare-assets.py 构建期资产准备）
 e2e/           Playwright 浏览器 E2E（fresh install + Next 首页 vs `/admin` + Service Worker）
 .github/       CI/CD：11 个上游 workflow + stable-ci / stable-release / secret-scan（本 fork 新增）
 ```

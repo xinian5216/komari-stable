@@ -33,8 +33,7 @@
 | 方法注册表 | `web/rpc/jsonrpc/register.go` |
 | 前端实时数据 WS | `GET /api/clients` → `web/api/ws.go` / `WebSocket.go` |
 | Agent v2 RPC | `GET|POST /api/clients/v2/rpc` → `web/api/client/report_v2.go` |
-| Agent 终端 | `GET /api/clients/terminal?id=` → `web/api/terminal/establish.go` |
-| Agent 文件传输 | `GET|POST /api/clients/transfer/:id` → `web/filemanager/transfer.go` |
+| 已移除的远控入口 | 终端、远程文件、任务相关旧路径在 `web/router/router.go` 统一返回 `410 Gone` |
 | 自动发现注册 | `POST /api/clients/register` → `web/api/client/autoDiscovery.go` |
 | 安装向导 | `web/install/install.go`（`/install`、`/api/install/*`） |
 | 指标库恢复向导 | `web/recovery/recovery.go`（`/database-recovery`） |
