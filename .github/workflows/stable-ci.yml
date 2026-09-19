@@ -70,6 +70,9 @@ jobs:
       # 发布不可变守卫的自测（无网络：gh / docker 均被桩替换）
       - name: Release guard self-test
         run: bash scripts/tests/test-release-guard.sh
+      # 发布来源守卫的正反向自测（本地 Git 历史 + gh 桩，无网络）
+      - name: Release preflight self-test
+        run: bash scripts/tests/test-release-preflight.sh
       - name: Installer migration safety self-test
         run: bash scripts/tests/test-installer-migration.sh
       # 测试必须自清理：运行期数据（主题、数据库等）不得落进源码树。

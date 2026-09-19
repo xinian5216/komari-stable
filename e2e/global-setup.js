@@ -33,7 +33,10 @@ async function waitFor(url, timeoutMs) {
   while (Date.now() < deadline) {
     try {
       const response = await fetch(url, { redirect: "manual" });
-      if (response.ok || (response.status >= 300 && response.status < 500)) {
+      // Guide mode intentionally returns 404 for normal application APIs. Only
+      // a 2xx response proves that the requested phase is actually ready; a
+      // 404 here used to let the test race the guide-to-app listener handoff.
+      if (response.ok) {
         return;
       }
       lastError = `HTTP ${response.status}`;
