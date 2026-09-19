@@ -42,26 +42,30 @@ func TestMonitoringOnlyAgentIsRefusedRemoteControlMethods(t *testing.T) {
 	}
 }
 
-func TestOptedInAgentIsAllowedRemoteControlMethods(t *testing.T) {
+func TestClaimedRemoteControlCapabilitiesAreIgnored(t *testing.T) {
 	resetCapabilities(t)
 	const uuid = "remote-control"
 	SetClientCapabilities(uuid, []string{"ping", "message", "event", "exec", "terminal", "file"}, "elevated")
 
 	for _, method := range []string{v2.MethodAgentExec, v2.MethodAgentTerminal, v2.MethodAgentFile} {
-		if err := CheckMethodCapability(uuid, method); err != nil {
-			t.Fatalf("%s must be allowed: %v", method, err)
+		if err := CheckMethodCapability(uuid, method); !errors.Is(err, ErrCapabilityUnavailable) {
+			t.Fatalf("%s returned %v, want ErrCapabilityUnavailable", method, err)
 		}
+	}
+	capabilities, _, _ := ClientCapabilities(uuid)
+	if len(capabilities) != 3 {
+		t.Fatalf("remote-control capabilities were retained: %v", capabilities)
 	}
 }
 
-func TestLegacyAgentsKeepTheHistoricalBehaviour(t *testing.T) {
+func TestLegacyAgentsAreAlsoRefusedRemoteControl(t *testing.T) {
 	resetCapabilities(t)
 	const uuid = "legacy-agent"
 
 	// Nothing was reported (older agent, or a restarted server).
 	for _, method := range []string{v2.MethodAgentExec, v2.MethodAgentTerminal, v2.MethodAgentFile} {
-		if err := CheckMethodCapability(uuid, method); err != nil {
-			t.Fatalf("%s must not be blocked for an agent that reported nothing: %v", method, err)
+		if err := CheckMethodCapability(uuid, method); !errors.Is(err, ErrCapabilityUnavailable) {
+			t.Fatalf("%s returned %v, want ErrCapabilityUnavailable", method, err)
 		}
 	}
 
@@ -85,8 +89,8 @@ func TestPrivilegeLevelSurvivesACapabilityOnlyReport(t *testing.T) {
 	if privilegeLevel != "elevated" {
 		t.Fatalf("privilege level = %q, want the previously reported value", privilegeLevel)
 	}
-	if !HasCapability(uuid, CapabilityExec) {
-		t.Fatal("the updated capability list was not applied")
+	if HasCapability(uuid, CapabilityExec) {
+		t.Fatal("the reported exec capability must be ignored")
 	}
 }
 
@@ -106,18 +110,18 @@ func TestDispatchV2EventRefusesIncapableAgent(t *testing.T) {
 	}
 }
 
-func TestDispatchV2EventQueuesForLegacyAgent(t *testing.T) {
+func TestDispatchV2EventRefusesLegacyAgent(t *testing.T) {
 	resetCapabilities(t)
 	const uuid = "dispatch-legacy"
 	MarkV2Client(uuid)
 	t.Cleanup(func() { DeleteConnectedClients(uuid) })
 
-	if err := DispatchV2Event(uuid, v2.MethodAgentTerminal, v2.TerminalRequestParams{RequestID: "req-2"}); err != nil {
-		t.Fatalf("legacy dispatch failed: %v", err)
+	if err := DispatchV2Event(uuid, v2.MethodAgentTerminal, v2.TerminalRequestParams{RequestID: "req-2"}); !errors.Is(err, ErrCapabilityUnavailable) {
+		t.Fatalf("legacy dispatch returned %v, want ErrCapabilityUnavailable", err)
 	}
 	events := TakeV2Events(uuid, nil, 10)
-	if len(events) != 1 || events[0].Method != v2.MethodAgentTerminal {
-		t.Fatalf("legacy event was not queued: %v", events)
+	if len(events) != 0 {
+		t.Fatalf("a legacy remote-control event was queued: %v", events)
 	}
 }
 

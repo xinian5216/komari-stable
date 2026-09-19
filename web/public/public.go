@@ -97,10 +97,10 @@ func hasPathPrefix(reqPath, prefix string) bool {
 
 // isCoreFrontendPath reports routes that must always be served by the embedded
 // default frontend. The active public theme (including bundled Next) owns the
-// public homepage, not admin / terminal / recovery documents.
+// public homepage, not admin / recovery documents. `/terminal` is registered
+// separately as a 410 tombstone because remote control was removed.
 func isCoreFrontendPath(reqPath string) bool {
 	return hasPathPrefix(reqPath, "/admin") ||
-		hasPathPrefix(reqPath, "/terminal") ||
 		hasPathPrefix(reqPath, "/manage") ||
 		hasPathPrefix(reqPath, "/install") ||
 		hasPathPrefix(reqPath, "/database-recovery")
@@ -284,7 +284,7 @@ func static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc), force
 		shouldReplace := true
 		isCoreRoute := forceDefaultTheme || isCoreFrontendPath(reqPath)
 
-		// Core admin/terminal/recovery documents always use the embedded default
+		// Core admin/recovery documents always use the embedded default
 		// frontend. The public theme (Next or a custom theme) must not replace them,
 		// and they must not register a root-scoped Service Worker.
 		if isCoreRoute {

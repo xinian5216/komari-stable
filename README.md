@@ -255,8 +255,9 @@ CGO_ENABLED=1 go build -o komari .   # 需要 C 编译器（跨平台编译可�
 ./komari server -l 0.0.0.0:25774
 ```
 
-> 全新安装完成后，前台默认使用随包内嵌的 **Komari Next**；`/admin`、`/terminal` 与恢复页面始终使用
-> 嵌入式核心前端。既有实例升级不受影响（详见 [`CHANGELOG.md`](./CHANGELOG.md) 与
+> 全新安装完成后，前台默认使用随包内嵌的 **Komari Next**；`/admin` 与恢复页面始终使用
+> 嵌入式核心前端。远程命令、终端和 Agent 文件管理已移除，旧路径返回 `410 Gone`。
+> 既有实例的主题选择不受影响（详见 [`CHANGELOG.md`](./CHANGELOG.md) 与
 > [`MAINTENANCE_POLICY.md`](./MAINTENANCE_POLICY.md) 的"发行版打包 / 默认行为调整"一节）。
 
 ### 组件与仓库

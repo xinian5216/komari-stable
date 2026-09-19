@@ -2,31 +2,23 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/database/dbcore"
 	"github.com/komari-monitor/komari/database/models"
-	"github.com/komari-monitor/komari/database/tasks"
 
 	"github.com/komari-monitor/komari/internal/config"
 	"github.com/komari-monitor/komari/pkg/rpc"
-	v2 "github.com/komari-monitor/komari/protocol/v2"
-	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/utils/geoip"
 	"github.com/komari-monitor/komari/utils/messageSender"
-	agent_runtime "github.com/komari-monitor/komari/web/agent"
 	"gorm.io/gorm"
 )
 
 // admin.system.go
-// 系统/运维类 RPC2 方法（admin 命名空间）：日志、远程执行、测试。
+// 系统/运维类 RPC2 方法（admin 命名空间）：日志与本机测试。
 
 func init() {
 	RegisterWithGroupAndMeta("getLogs", rpc.RoleAdmin, adminGetLogs, &rpc.MethodMeta{
@@ -39,12 +31,8 @@ func init() {
 		},
 		Returns: "{ logs: Log[], total: number }",
 	})
-	reg("exec", adminExec, "Execute a command on clients")
-
 	reg("testSendMessage", adminTestSendMessage, "Send a test notification")
 	reg("testGeoip", adminTestGeoip, "Test GeoIP lookup")
-	// 远程命令执行属敏感操作：除 admin 角色外，还需通过敏感操作二次验证。
-	rpc.MarkSensitive("admin:exec")
 }
 
 func adminGetLogs(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
@@ -96,89 +84,6 @@ func filterAdminLogsByMessageType(query *gorm.DB, msgType string) *gorm.DB {
 		return query.Where("msg_type = ?", msgType)
 	}
 	return query
-}
-
-func adminExec(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
-	var params struct {
-		Command string   `json:"command"`
-		Clients []string `json:"clients"`
-	}
-
-	req.BindParams(&params)
-	if strings.TrimSpace(params.Command) == "" {
-		return nil, rpc.MakeError(rpc.InvalidParams, "Command cannot be empty", nil)
-	}
-	if len(params.Clients) == 0 {
-		return nil, rpc.MakeError(rpc.InvalidParams, "clients is required", nil)
-	}
-
-	var onlineClients, queuedClients, offlineClients, unsupportedClients []string
-	for _, uuid := range params.Clients {
-		// An agent that reported no exec capability (remote control disabled)
-		// must not receive commands it would only reject.
-		if err := agent_runtime.CheckMethodCapability(uuid, v2.MethodAgentExec); err != nil {
-			unsupportedClients = append(unsupportedClients, uuid)
-			continue
-		}
-		if client := agent_runtime.GetConnectedClients()[uuid]; client != nil {
-			onlineClients = append(onlineClients, uuid)
-		} else if agent_runtime.IsAgentOnline(uuid) {
-			queuedClients = append(queuedClients, uuid)
-		} else {
-			offlineClients = append(offlineClients, uuid)
-		}
-	}
-	if len(onlineClients) == 0 && len(queuedClients) == 0 {
-		if len(unsupportedClients) > 0 {
-			return nil, rpc.MakeError(rpc.InvalidParams, "capability unavailable: remote control is disabled on "+strings.Join(unsupportedClients, ", "), nil)
-		}
-		return nil, rpc.MakeError(rpc.InvalidParams, "No clients connected", nil)
-	}
-	taskId := utils.GenerateRandomString(16)
-	taskClients := append(append([]string{}, onlineClients...), queuedClients...)
-	taskClients = append(taskClients, offlineClients...)
-	if err := tasks.CreateTask(taskId, taskClients, params.Command); err != nil {
-		return nil, rpc.MakeError(rpc.InternalError, "Failed to create task: "+err.Error(), nil)
-	}
-	for _, uuid := range onlineClients {
-		payload, _ := json.Marshal(v2.Request{JSONRPC: v2.Version, Method: v2.MethodAgentExec, Params: v2.ExecParams{TaskID: taskId, Command: params.Command}})
-		client := agent_runtime.GetConnectedClients()[uuid]
-		if client == nil {
-			return nil, rpc.MakeError(rpc.InvalidParams, "Client connection is null: "+uuid, nil)
-		}
-		if err := client.WriteMessage(websocket.TextMessage, payload); err != nil {
-			return nil, rpc.MakeError(rpc.InvalidParams, "Client connection is broke: "+uuid, nil)
-		}
-	}
-	for _, uuid := range queuedClients {
-		err := agent_runtime.DispatchV2Event(uuid, v2.MethodAgentExec, v2.ExecParams{TaskID: taskId, Command: params.Command})
-		if errors.Is(err, agent_runtime.ErrCapabilityUnavailable) {
-			unsupportedClients = append(unsupportedClients, uuid)
-		}
-	}
-	actor, ip := auditActor(ctx)
-	auditlog.Log(ip, actor, "REC, task id: "+taskId, "warn")
-	if len(unsupportedClients) > 0 {
-		for _, uuid := range unsupportedClients {
-			_ = tasks.SaveTaskResult(taskId, uuid, "capability unavailable: remote control is disabled on this agent", -1, time.Now().UTC())
-		}
-	}
-	if len(offlineClients) > 0 {
-		for _, uuid := range offlineClients {
-			tasks.SaveTaskResult(taskId, uuid, "Client offline!", -1, time.Now().UTC())
-		}
-	}
-	response := map[string]any{
-		"task_id":        taskId,
-		"clients":        onlineClients,
-		"queued_clients": queuedClients,
-	}
-	if len(unsupportedClients) > 0 {
-		// Reported explicitly instead of failing silently: the caller asked for
-		// clients that cannot execute commands right now.
-		response["capability_unavailable_clients"] = unsupportedClients
-	}
-	return response, nil
 }
 
 func adminTestSendMessage(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

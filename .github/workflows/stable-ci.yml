@@ -55,6 +55,8 @@ jobs:
           python-version: "3.12"
       - name: Check .agent index consistency
         run: python scripts/check_agent_index.py
+      - name: Guard removed remote-control surface
+        run: python scripts/check_remote_control_removed.py
 
   # 所有需要编译 Go 代码的 job 都依赖构建期资产：
   # //go:embed defaultTheme/dist.tar.zst（嵌入前端）与 //go:embed bundledTheme（随包主题）。

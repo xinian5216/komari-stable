@@ -35,7 +35,7 @@
 已应用此项的变更：
 
 - **新安装默认前台主题 = Komari Next（随包内嵌的 bundled preferred theme）**。首次进入 `1.5.0-stable.1`（尚未发布）。
-  嵌入式核心前端仍为 `xinian5216/komari-web-stable`（`/admin`、`/terminal`、recovery/restricted 与 fallback），
+  嵌入式核心前端仍为 `xinian5216/komari-web-stable`（`/admin`、recovery/restricted 与 fallback），
   既有实例升级后 `theme` 配置与 `data/theme/*` 完全不变。
 
 ## 2.2 发布产物不可变（immutability）
@@ -64,6 +64,10 @@
 - 修改 Agent v2 线协议或使其不向后兼容（见 §7）。
 
 技术债一律先记入 `TECH_DEBT.md`，不做"顺手修复"。
+
+已记录的安全例外：Issue #2 明确批准删除远程命令、Web 终端和 Agent 远程文件管理。该能力扩大了
+服务端受攻击面且不属于监控主功能；实现、路由和 RPC 均须移除，协议常量与数据库表仅为旧 Agent
+兼容和紧急回滚保留。此例外不授权删除其它功能。
 
 ## 4. 缺陷处理流程（强制）
 
@@ -102,14 +106,15 @@ Issue → 复现 → 根因 → 写失败测试（failing test） → 最小修�
 
 - 服务端必须尽可能兼容官方 Agent（v2 协议，`/api/clients/v2/rpc`：WebSocket 优先、POST 回退、`agent.pull`）。
 - 不主动修改线协议；确需修改时必须**向后兼容**（新服务端仍接受旧 Agent 报文）。
-- 不得因服务端重构导致旧 Agent 无法连接、上报、执行任务或建立终端会话。
+- 旧 Agent 必须仍可连接、上报监控、执行 ping 和接收普通消息；远程命令、终端与远程文件能力已按
+  Issue #2 的安全决策移除，不属于兼容承诺。旧结果报文可确认后丢弃，服务端不得重新下发远控事件。
 - **Agent 由本 fork 维护镜像仓库** `xinian5216/komari-agent-stable`（源自上游 `komari-agent`）：
   其安装脚本、发布与更新通道由本 fork 负责；Agent 侧只接受 Bug/安全修复，**协议固定为冻结的 v2**，
   且服务端不得因 Agent 版本推进而拒绝旧 Agent。
 
 ## 8. 依赖与安全维护
 
-- 定期：`govulncheck ./...`、GitHub Security Advisory、Dependabot/依赖公告、WebSocket/终端/上传/插件
+- 定期：`govulncheck ./...`、GitHub Security Advisory、Dependabot/依赖公告、WebSocket/上传/插件
   等高危面复查。
 - 依赖升级只做**安全驱动**，且一次一个模块族，单独提交、单独发布，升级后必须：
   全量测试 + `govulncheck` 复核 + 记录到 CHANGELOG。

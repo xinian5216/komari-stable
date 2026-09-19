@@ -1,6 +1,7 @@
 # API.md — 接口地图（HTTP + RPC2）
 
-> 兼容性规则：**HTTP 路径、请求/响应字段、RPC 方法名均视为冻结**。新增只能"加"，不能改名/删字段。
+> 兼容性规则：监控与管理 API 默认冻结。因 Issue #2 的安全决策，远程命令、终端和远程文件接口已移除；
+> 旧 HTTP 路径固定返回 `410 Gone`，旧 RPC 方法不再注册。
 > 详细字段说明见官方文档 `komari-monitor/komari-document`（`dev/api.md`、`dev/rpc.md`）。
 
 ## 1. 路由总表（代码：`web/router/router.go`）
@@ -15,7 +16,7 @@
 | GET | `/api/me`、`/api/nodes`、`/api/public`、`/api/version` | 公开信息（RPC2 绑定） |
 | GET | `/api/recent/:uuid`、`/api/records/{load,ping}`、`/api/task/ping` | 记录查询（RPC2 绑定） |
 | GET | `/api/plugin/:short/*filepath` | 插件公开页面（iframeless） |
-| GET/HEAD | `/api/preview/client/:uuid/file/download` | 短期预览令牌下载 |
+| GET/HEAD | `/api/preview/client/:uuid/file/download` | 已移除（`410 Gone`） |
 | GET | `/api/clients`（WebSocket） | 前端实时数据流（发 `get` / `get <uuid>`） |
 | GET/POST | `/api/rpc2` | JSON-RPC 2.0 直连入口 |
 
@@ -25,8 +26,8 @@
 | --- | --- | --- |
 | POST | `/api/clients/register` | 自动发现注册（`Authorization: Bearer <AutoDiscoveryKey>`） |
 | GET/POST | `/api/clients/v2/rpc` | **v2 主通道**（WS / POST 回退） |
-| GET/POST | `/api/clients/transfer/:id` | 文件数据流 |
-| GET | `/api/clients/terminal` | 终端会话 WebSocket |
+| GET/POST | `/api/clients/transfer/:id` | 已移除（`410 Gone`） |
+| GET | `/api/clients/terminal` | 已移除（`410 Gone`） |
 
 ### 管理（`RequireRole(admin)`，`/api/admin/*`）
 
@@ -41,7 +42,7 @@
 | `rpc.` | 内省 | `rpc.methods`、`rpc.help`、`rpc.ping`、`rpc.version` |
 | `common:` | 登录后通用 | `getNodes`、`getNodesLatestStatus`、`getRecords`、`getNodeRecentStatus`、`getMe`、`getPublicInfo` |
 | `public:` | 访客 | `getMe`、`getNodesInformation`、`getPublicSettings`、`getVersion`、`getClientRecentRecords`、`getRecordsByUUID`、`getPingRecords`、`getPublicPingTasks` |
-| `admin:` | 管理员 | 节点/任务/设置/通知/插件/主题/备份/数据库维护/指标管理/终端等（文件按域拆分：`admin.client.go`、`admin.task.go`、`admin.system.go`、`admin.metric.go`、`admin.plugin.go`、`admin.theme.go`…） |
+| `admin:` | 管理员 | 节点/设置/通知/插件/主题/备份/数据库维护/指标管理等；远程命令、终端、任务和远程文件方法不再注册 |
 
 绑定与传输：`transport.go`（HTTP 解析/鉴权/错误包装）、`jsonrpc/bridge.go`（REST↔RPC 桥）、
 `dispatch.go`（方法分发）、`principal.go`（调用方身份）。
@@ -56,7 +57,7 @@
 
 ## 4. 修改接口时的检查清单
 
-1. 只做**向后兼容**的增量（新字段可选、旧字段保留）；
+1. 只做**向后兼容**的增量（新字段可选、旧字段保留）；安全决策移除的远控接口不得恢复；
 2. 同步更新 `.agent/API.md`、`CHANGELOG.md` 的 Compatibility 段；
 3. 公开接口（`public:`/`common:`）尤其注意**信息泄露**（token、ip、remark、version 一律不下发）；
 4. 涉及写操作时检查是否受 CORS/Origin 与角色校验覆盖。

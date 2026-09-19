@@ -3,6 +3,7 @@ package client
 import (
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	v2 "github.com/komari-monitor/komari/protocol/v2"
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
 )
@@ -44,8 +45,8 @@ func TestReportsWithoutCapabilitiesAreIgnored(t *testing.T) {
 	if _, _, reported := agent_runtime.ClientCapabilities(uuid); reported {
 		t.Fatal("a client that reported nothing is marked as reported")
 	}
-	if !agent_runtime.HasCapability(uuid, agent_runtime.CapabilityExec) {
-		t.Fatal("legacy clients must keep the historical behaviour")
+	if agent_runtime.HasCapability(uuid, agent_runtime.CapabilityExec) {
+		t.Fatal("legacy clients must not regain removed remote control")
 	}
 }
 
@@ -83,7 +84,29 @@ func TestPullParamsCapabilitiesAreIngested(t *testing.T) {
 	params := v2.PullParams{Capabilities: []string{"ping", "message", "event", "exec", "terminal", "file"}}
 	ingestReportedCapabilities(uuid, params.Capabilities, "")
 
-	if !agent_runtime.HasCapability(uuid, agent_runtime.CapabilityFile) {
-		t.Fatal("the reported file capability was not recorded")
+	capabilities, _, reported := agent_runtime.ClientCapabilities(uuid)
+	if !reported {
+		t.Fatal("the monitoring capabilities were not recorded")
+	}
+	if len(capabilities) != 3 || agent_runtime.HasCapability(uuid, agent_runtime.CapabilityFile) {
+		t.Fatalf("remote-control capabilities were not filtered: %v", capabilities)
+	}
+}
+
+func TestLegacyRemoteControlResultsAreAcknowledgedAndIgnored(t *testing.T) {
+	for _, method := range []string{v2.MethodAgentTaskResult, v2.MethodAgentFileResult} {
+		response := handleV2RPC("legacy-result-agent", v2.Request{
+			JSONRPC: v2.Version,
+			ID:      1,
+			Method:  method,
+			Params:  map[string]any{"unexpected": "payload"},
+		}, false)
+		if response.Error != nil {
+			t.Fatalf("%s returned transport error: %+v", method, response.Error)
+		}
+		result, ok := response.Result.(gin.H)
+		if !ok || result["status"] != "ignored" {
+			t.Fatalf("%s result = %#v, want ignored", method, response.Result)
+		}
 	}
 }

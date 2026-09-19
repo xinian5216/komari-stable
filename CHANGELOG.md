@@ -16,8 +16,12 @@
 
 ### Fixed / Security
 
+- **移除高风险远程控制面（Issue #2）**：服务端不再提供远程命令、Web 终端、任务下发和 Agent
+  远程文件管理。相关实现与 `admin:exec`、任务、终端、远程文件 RPC 已删除；旧 HTTP 路径统一返回
+  `410 Gone`，未知旧 RPC 返回 `Method not found`。服务端过滤 Agent 上报的 `exec` / `terminal` /
+  `file` capability，并在事件下发层再次拒绝这些方法；CI 新增静态守卫，防止后续误恢复。
 - **theme=next 时后台被 Service Worker 显示成公开首页**：fresh install 仍默认 `theme=next`，`/` 仍由
-  Komari Next 提供。`/admin`、`/terminal`、`/manage` 等核心路径强制使用嵌入式 default frontend，
+  Komari Next 提供。`/admin`、`/manage` 等核心路径强制使用嵌入式 default frontend，
   并从 HTML 中去掉根作用域 SW 注册。`/sw.js` 与 `/registerSW.js` 不被公开主题覆盖；升级后的
   `/sw.js` 在 Workbox 脚本前追加 core-route network bypass（不改写生成代码），旧 fallback
   不再把 Next 首页当成 `/admin` 返回。浏览器 E2E 见 `e2e/`。
@@ -38,11 +42,28 @@
   `komari-web-stable@v1.5.0-stable.2`（`6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d`，不可变 tag）。
   该前端把 `/admin`、`/terminal`、`/manage`、`/install`、`/database-recovery` 移出
   Workbox navigation fallback。随包首选主题 `komari-next-stable@v1.4.19-stable.1` **保持不变**。
+  其中 `/terminal` 现在由 Server 在静态前端前直接返回 `410 Gone`；配套 Web 入口清理由独立组件
+  变更完成后再更新锁定资产。
 
 ### Compatibility
 
-- 不修改数据库 Schema、Agent v2 已有字段、HTTP API、配置格式或 Docker 部署方式。
+- 不修改数据库 Schema、Agent v2 已有字段、配置格式或 Docker 部署方式。任务与结果表保留，便于回滚；
+  启动时仅把 `exit_code IS NULL` 的遗留任务结果标记为取消，已完成历史不变。
+- 旧 Agent 仍可连接、上报监控、执行 ping 和接收普通消息。旧 `agent.taskResult` / `agent.file.result`
+  报文会得到成功确认后被忽略；服务端不会向任何版本 Agent 下发远控事件。
+- 旧远控 HTTP API 有意改为 `410 Gone`，旧远控 RPC 有意改为 `Method not found`。这是安全移除，
+  不提供兼容开关。
 - 外置 MySQL/PostgreSQL 指标库仍需用户按数据库自身方式备份；Server 脚本只负责本机 `/opt/komari`。
+
+### Upgrade
+
+- 按常规方式替换二进制或更新镜像。首次启动会在版本升级备份完成后取消遗留未完成远控任务；
+  无需 Schema 迁移。升级前应确认自动备份所需磁盘空间。
+
+### Rollback
+
+- 如需恢复旧版行为，先停止新版本，并恢复 `data/backup/upgrade-*.zip` 后再换回旧二进制/镜像。
+  直接回退二进制也能读取保留的表结构，但新版本已标记为取消的未完成任务不会自动恢复为待执行状态。
 
 ## 1.5.0-stable.2 — 已发布（2026-09-17）
 

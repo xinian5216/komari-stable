@@ -6,8 +6,8 @@ import (
 	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/database/clients"
 	"github.com/komari-monitor/komari/database/models"
-	"github.com/komari-monitor/komari/internal/metricstore"
 	"github.com/komari-monitor/komari/database/records"
+	"github.com/komari-monitor/komari/internal/metricstore"
 	"github.com/komari-monitor/komari/pkg/rpc"
 	agent_runtime "github.com/komari-monitor/komari/web/agent"
 )
@@ -167,20 +167,19 @@ func adminListClients(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonR
 	return cls, nil
 }
 
-// attachReportedCapabilities copies what an agent reported about its remote
-// control capabilities onto the client model. Clients that never reported keep
-// the fields empty, which the panel reads as "unknown" and treats like before.
+// attachReportedCapabilities copies filtered monitoring metadata onto the
+// client model. RemoteControlKnown is always true so older pinned panels hide
+// their remote-control entry points even for legacy agents that report nothing.
 func attachReportedCapabilities(client *models.Client) {
 	if client == nil {
 		return
 	}
 	capabilities, privilegeLevel, reported := agent_runtime.ClientCapabilities(client.UUID)
-	if !reported {
-		return
-	}
-	client.Capabilities = capabilities
-	client.PrivilegeLevel = privilegeLevel
 	client.RemoteControlKnown = true
+	if reported {
+		client.Capabilities = capabilities
+		client.PrivilegeLevel = privilegeLevel
+	}
 }
 
 func adminGetClientToken(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

@@ -13,7 +13,7 @@
 
 - 相关文件：`web/api/client/autoDiscovery.go`、`report_v2.go`、`ingest.go`、`presence.go`、
   `uploadBasicInfo.go`、`web/connection/safe_conn.go`、`database/clients/*`、`internal/metricstore/report_*.go`
-- 职责：自动发现注册、v2 上报（WS/POST）、在线状态、实时状态缓存、Agent capability/权限级别内存态。
+- 职责：自动发现注册、v2 上报（WS/POST）、在线状态、实时状态缓存、过滤远控 capability、权限级别内存态。
 
 ## 指标存储
 
@@ -39,17 +39,17 @@
 - 相关文件：`protocol/v2/jsonrpc.go`、`web/api/client/*`、`web/rpc/jsonrpc/transport.go`
 - 职责：v2 JSON-RPC 方法常量与结构、WS/POST 传输、事件下发与 ack、可选 capability 上报。
 
-## 终端（Web SSH）
+## 远程控制移除边界
 
-- 相关文件：`web/api/terminal/{terminal,request,establish,forward}.go`、`web/rpc/jsonrpc/admin.xtermjs.go`、
-  `web/connection/safe_conn.go`
-- 职责：会话创建/重附着、浏览器 ↔ 服务器 ↔ Agent 双向流、终端设置（可含 2FA 流程）。
+- 相关文件：`web/router/router.go`、`web/agent/capabilities.go`、`web/api/client/report_v2.go`、
+  `database/dbcore/remote_control.go`、`scripts/check_remote_control_removed.py`
+- 职责：旧终端/任务/远程文件 HTTP 路径返回 `410`；旧 RPC 不注册；远控 capability 被过滤；
+  旧 Agent 结果确认后丢弃；启动时取消遗留未完成任务。协议常量和数据库表仅为兼容/回滚保留。
 
-## 文件管理与传输
+## 本地上传与备份
 
-- 相关文件：`web/filemanager/{client,transfer,stream_relay}.go`、`web/rpc/jsonrpc/admin.file.go`、
-  `web/upload/{handler,chunk}.go`、`web/api/admin/archive_upload.go`
-- 职责：远程文件浏览/编辑、分块上传、流式中继（大文件）、备份上传。
+- 相关文件：`web/upload/{handler,chunk}.go`、`web/api/admin/archive_upload.go`
+- 职责：管理后台上传与备份导入；不提供 Agent 远程文件访问。
 
 ## 插件系统
 

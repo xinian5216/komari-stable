@@ -2,7 +2,8 @@ name: Bundled theme test (fresh install / seed failures / upgrades)
 
 # 三轮门禁，全部针对"随包首选主题（Komari Next）"：
 #   1. fresh-install  —— 全新安装：theme=next、data/theme/next 完整、/ 来自 Next、
-#                        /admin 与 /terminal 仍来自嵌入式 default，API/WS/登录/私有站点/SPA/favicon 正常
+#                        /admin 仍来自嵌入式 default，已删除的 /terminal 返回 410，
+#                        API/WS/登录/私有站点/SPA/favicon 正常
 #   2. seed-failures  —— 哈希错 / 非法 zip / manifest 错：安装仍成功、theme=default、不生成 data/theme/next
 #   3. upgrade-matrix —— 存量实例（theme=default / next / custom）升级：配置与主题目录逐项不变
 
@@ -87,15 +88,18 @@ jobs:
           if grep -q "entry-index-" /tmp/index.html; then echo "FAIL: / served the embedded default"; exit 1; fi
           echo "OK: / served by the bundled Next theme"
 
-      - name: "Assert: /admin and /terminal still come from the embedded default"
+      - name: "Assert: /admin stays embedded and /terminal stays removed"
         run: |
           set -euxo pipefail
-          for path in /admin /terminal /admin/settings; do
+          for path in /admin /admin/settings; do
             curl -sf "http://127.0.0.1:${PORT}${path}" -o /tmp/panel.html -w "GET ${path} -> %{http_code}\n"
             if ! grep -q "entry-index-" /tmp/panel.html; then echo "FAIL: ${path} is not served by the embedded default"; exit 1; fi
             if grep -qE "__next|_next/" /tmp/panel.html; then echo "FAIL: ${path} leaked the bundled theme"; exit 1; fi
           done
-          echo "OK: admin/terminal keep the embedded core frontend"
+          code="$(curl -s -o /tmp/terminal-removed.json -w '%{http_code}' "http://127.0.0.1:${PORT}/terminal")"
+          [ "$code" = 410 ]
+          grep -q 'remote control was removed' /tmp/terminal-removed.json
+          echo "OK: admin keeps the embedded core frontend and terminal is gone"
 
       - name: "Assert: theme assets, SPA refresh, favicon"
         run: |

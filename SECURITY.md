@@ -27,7 +27,7 @@
 
 - 服务端（本仓库）中的认证/鉴权绕过、注入（SQL/命令/路径）、SSRF、XSS、CSRF/CSWSH、权限提升、
   文件读写越界、上传/下载校验缺陷；
-- Web 终端（WebSocket 会话）与文件管理器、插件宿主（JS 运行时与权限清单）的安全问题；
+- 已移除远程命令/终端/远程文件边界的绕过或重新暴露，以及插件宿主（JS 运行时与权限清单）的安全问题；
 - 指标数据库（SQLite/MySQL/PostgreSQL）访问与 DSN 处理相关问题；
 - 依赖中的**可达**漏洞（`govulncheck` 能给出调用路径的）。
 
@@ -58,7 +58,7 @@ CORS 与 WebSocket Origin 校验默认开启。
 
 ## 运维加固建议
 
-1. **始终使用 HTTPS/WSS**（反向代理），否则会话 Cookie 与终端流量可被中间人截获。
+1. **始终使用 HTTPS/WSS**（反向代理），否则会话 Cookie 与 Agent 上报流量可被中间人截获。
 2. 保持 `CORS Origin 校验` 与 `WebSocket Origin 校验` 开启；仅在确有需要时使用允许列表。
 3. 按需开启 **SSRF 防护**（`ssrf_protection_enabled`，默认关闭；影响主题/插件市场与远程导入）。
 4. 为管理员账号启用 **2FA**；不要把面板直接裸露在公网，建议加访问控制（VPN / IP 白名单 / Basic Auth 前置）。
