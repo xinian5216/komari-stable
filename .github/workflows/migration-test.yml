@@ -214,15 +214,20 @@ jobs:
           VALUES(5,'Fixture Ping','["11111111-1111-1111-1111-111111111111"]',0,'icmp','1.1.1.1',60);
           INSERT OR REPLACE INTO configs(key,value) VALUES('custom_fixture','"preserve-me"');
           SQL
-          sudo sqlite3 /opt/komari/data/metrics.db <<'SQL'
+          # Keep the synthetic fine-grained bucket inside the active 1-minute
+          # retention tier. A fixed timestamp made this rehearsal start
+          # failing as the calendar advanced because normal retention cleanup
+          # correctly removed the now-old bucket during the first startup.
+          FIXTURE_TS=$((($(date -u +%s) / 60 - 5) * 60000))
+          sudo sqlite3 /opt/komari/data/metrics.db <<SQL
           INSERT INTO metric_definitions(name,type,unit,description,retention_days,metadata,created_at_milli,updated_at_milli)
-          VALUES('fixture.metric','gauge','x','migration fixture',30,'{}',1789612200000,1789612200000);
+          VALUES('fixture.metric','gauge','x','migration fixture',30,'{}',${FIXTURE_TS},${FIXTURE_TS});
           INSERT INTO metric_series(metric_name,entity_id,tags_hash,tags)
           VALUES('fixture.metric','11111111-1111-1111-1111-111111111111','fixture-series-hash','{}');
           INSERT INTO metric_resolutions(resolution_milli) VALUES(60000);
           INSERT INTO metric_label_sets(labels_hash,labels) VALUES('fixture-label-hash','{}');
           INSERT INTO metric_rollups(series_id,resolution_id,label_id,bucket_milli,count,sum,sum_sq,min_val,max_val,first_val,first_ts_milli,last_val,last_ts_milli,digest,created_at_milli)
-          SELECT s.id,r.id,l.id,1789612200000,1,42.5,1806.25,42.5,42.5,42.5,1789612200000,42.5,1789612200000,NULL,1789612200000
+          SELECT s.id,r.id,l.id,${FIXTURE_TS},1,42.5,1806.25,42.5,42.5,42.5,${FIXTURE_TS},42.5,${FIXTURE_TS},NULL,${FIXTURE_TS}
           FROM metric_series s,metric_resolutions r,metric_label_sets l
           WHERE s.metric_name='fixture.metric' AND r.resolution_milli=60000 AND l.labels_hash='fixture-label-hash';
           SQL
