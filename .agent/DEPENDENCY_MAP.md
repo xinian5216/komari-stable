@@ -10,7 +10,7 @@
 | `github.com/gin-gonic/gin` | HTTP 框架 | 路由、中间件、静态服务 |
 | `gorm.io/gorm` + `gorm.io/driver/sqlite` | ORM | 主库；AutoMigrate 建表 |
 | `github.com/spf13/cobra` | CLI | `cmd/*` |
-| `github.com/gorilla/websocket` | WebSocket | Agent v2、前端实时流、终端 |
+| `github.com/gorilla/websocket` | WebSocket | Agent v2、前端实时流 |
 | `github.com/google/uuid` | UUID | 节点/用户标识 |
 
 ## 构建期资产（不是 Go 依赖，但决定 `//go:embed` 能否编译）

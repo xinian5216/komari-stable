@@ -3,10 +3,10 @@
   "_comment": "Single source of truth for the build-time assets that //go:embed resolves. Both CI and local builds must prepare assets from this file only - never from main, latest, or an unverified asset. Update entries deliberately and record the change in CHANGELOG.md.",
   "assets": {
     "embedded_default_frontend": {
-      "role": "embedded core frontend: admin panel, terminal, recovery/restricted pages and the fallback theme",
+      "role": "embedded core frontend: admin panel, recovery/restricted pages and the fallback theme",
       "repository": "xinian5216/komari-web-stable",
-      "tag": "v1.5.0-stable.2",
-      "commit": "6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d",
+      "tag": "v1.5.0-stable.3",
+      "commit": "8364f47105fd91a0ba529eea020278077dfae50d",
       "build": {
         "node_version": "23",
         "install": "npm ci",

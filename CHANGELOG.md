@@ -38,12 +38,15 @@
 ### Changed
 
 - **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
-  从 `komari-web-stable@v1.5.0-stable.1`（`b69e706`）更新为
-  `komari-web-stable@v1.5.0-stable.2`（`6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d`，不可变 tag）。
-  该前端把 `/admin`、`/terminal`、`/manage`、`/install`、`/database-recovery` 移出
-  Workbox navigation fallback。随包首选主题 `komari-next-stable@v1.4.19-stable.1` **保持不变**。
-  其中 `/terminal` 现在由 Server 在静态前端前直接返回 `410 Gone`；配套 Web 入口清理由独立组件
-  变更完成后再更新锁定资产。
+  先从 `komari-web-stable@v1.5.0-stable.1` 更新到修复 PWA fallback 的
+  `v1.5.0-stable.2`，再更新到彻底删除远程命令、终端、Agent 文件管理 UI 与专用依赖的
+  `v1.5.0-stable.3`（`8364f47105fd91a0ba529eea020278077dfae50d`，不可变 tag）。
+  `/admin`、`/manage`、`/install`、`/database-recovery` 继续避开 Workbox navigation fallback，
+  `/terminal` 请求继续到达 Server 的 `410 Gone` tombstone。该 Web Release 的
+  `dist-release.zip` 已独立核验为
+  `sha256:ab7c05ccd6361fcc3f645378bd8dfd0904b5b298e179b2532531f5860d7a6cba`；Server 构建仍按锁定
+  commit 执行 `npm ci` 与 `npm run build`，不依赖该附件。随包首选主题
+  `komari-next-stable@v1.4.19-stable.1` **保持不变**。
 
 ### Compatibility
 
