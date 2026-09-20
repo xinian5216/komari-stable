@@ -5,13 +5,16 @@ inputs:
   zig-version:
     description: Zig version to install.
     default: 0.14.1
+  zig-sha256:
+    description: SHA-256 checksum for the Zig archive.
+    default: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
 
 runs:
   using: composite
   steps:
     - name: Restore Zig cache
       id: zig-cache
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/komari-zig/zig-x86_64-linux-${{ inputs.zig-version }}
         key: zig-${{ runner.os }}-x86_64-${{ inputs.zig-version }}
@@ -23,6 +26,7 @@ runs:
         set -euxo pipefail
         mkdir -p "$HOME/.cache/komari-zig"
         curl -fsSL "https://ziglang.org/download/${{ inputs.zig-version }}/zig-x86_64-linux-${{ inputs.zig-version }}.tar.xz" -o "$RUNNER_TEMP/zig.tar.xz"
+        echo "${{ inputs.zig-sha256 }}  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
         tar -C "$HOME/.cache/komari-zig" -Jxf "$RUNNER_TEMP/zig.tar.xz"
 
     - name: Add Zig to PATH

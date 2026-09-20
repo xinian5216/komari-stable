@@ -58,6 +58,7 @@ go test ./... -count=1             # 全量测试（约 1 分钟；pkg/metric �
 govulncheck ./...                  # 依赖漏洞（CI 同款；有"可达"漏洞时返回非 0）
 gitleaks git . --log-opts="--all" --config .gitleaks.toml --redact   # 密钥扫描
 actionlint .github/workflows/*.yml # workflow 语法
+python3 .github/scripts/check-workflow-pins.py  # 第三方 Action 必须固定完整 SHA + 精确版本注释
 ```
 
 说明：PostgreSQL/MySQL/MariaDB 集成测试需 `METRIC_POSTGRES_DSN` 等环境变量，否则自动 skip。
@@ -90,6 +91,7 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 | 多平台构建 | 第 2 节（换 CC target） | `stable-ci.yml` 的 `build` 作业 |
 | 密钥扫描 | `gitleaks` | `secret-scan.yml` |
 | 索引一致性 | `python scripts/check_agent_index.py` | `stable-ci.yml` 的 `agent-index` 作业 |
+| Actions 引用不可变 | `python3 .github/scripts/check-workflow-pins.py` | `stable-ci.yml` 的 `agent-index` 作业 |
 | 后台 SW E2E | 第 8 节 | `admin-sw-e2e.yml` |
 | 匿名安装演练 | GitHub Actions 可复用工作流 | `anonymous-e2e.yml`，由 `stable-ci.yml` 调用 |
 | 官方 1.4.3 迁移演练 | GitHub Actions 可复用工作流 | `migration-test.yml`，由 `stable-ci.yml` 调用 |
