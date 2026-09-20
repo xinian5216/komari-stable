@@ -2,8 +2,9 @@ name: Komari Stable Release
 
 # 发布流程：release published 时构建各平台二进制并上传 release 资产，
 # 随后构建并推送多架构 Docker 镜像。
-#   - 浮动 tag:  stable            （仅当该 release 是最新正式版时更新）
-#   - 不可变 tag: <release tag>    （例如 1.5.0-stable.1，永不覆盖）
+#   - 只发布不可变 tag: <release tag>（例如 v1.5.0-stable.5，永不覆盖）
+#   - 不发布或移动 stable/latest 等浮动 tag；正式 Release 只用于后台更新提示，
+#     运行中的面板必须由管理员显式升级。
 # 与上游 release.yml 的区别：
 #   1) 前端 ref 来自固定仓库 + 固定 ref（不解析 -fixN 后缀，不做默认分支回退）；
 #   2) Go 版本显式固定；
@@ -23,7 +24,7 @@ name: Komari Stable Release
 # 不可变性规则（见 MAINTENANCE_POLICY.md §2.2）：
 #   * 已发布的 release 资产永不覆盖：同名资产只有字节完全一致时才视为完成并跳过，
 #     字节不同则立即 FAIL（immutable release asset mismatch），也不会删除旧资产绕过；
-#   * 已发布的固定版本镜像 tag 永不指向新 digest：tag 已存在即 FAIL（stable 浮动 tag 仍可更新）；
+#   * 已发布的固定版本镜像 tag 永不指向新 digest：tag 已存在即 FAIL；
 #   * workflow_dispatch 只能"补齐缺失资产"——它不具备覆盖重发的能力。
 #     若已公开的产物确实有问题，请发布 v1.5.0-stable.2，而不是重写 stable.1。
 
@@ -276,35 +277,19 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Resolve tags
-        id: tags
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euxo pipefail
-          # 该 release 是否为最新正式版：是则同时更新浮动 tag "stable"
-          is_latest="$(gh api graphql \
-            -f 'query=query($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { isLatest } } }' \
-            -F owner="${{ github.repository_owner }}" \
-            -F name="${{ github.event.repository.name }}" \
-            -F tag="${RELEASE_TAG}" \
-            --jq '.data.repository.release.isLatest')"
-          TAGS="${REGISTRY}/${IMAGE_NAME}:${RELEASE_TAG}"
-          if [ "$is_latest" = "true" ]; then
-            TAGS="${TAGS},${REGISTRY}/${IMAGE_NAME}:stable"
-          fi
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
       - name: Refuse to overwrite a published version tag
         run: |
           set -euxo pipefail
-          # 固定版本 tag 一经成功发布即不可覆盖：已存在 -> FAIL；stable 浮动 tag 仍可更新。
+          # 固定版本 tag 一经成功发布即不可覆盖：已存在 -> FAIL。
+          # stable.4 是已经冻结的已知公开镜像，仅用于区分 registry 不可达与新 tag 不存在；
+          # 本工作流不会移动或重新发布它。
           bash scripts/release-guard.sh image \
             "${REGISTRY}/${IMAGE_NAME}:${RELEASE_TAG}" \
-            "${REGISTRY}/${IMAGE_NAME}:stable"
+            "${REGISTRY}/${IMAGE_NAME}:v1.5.0-stable.4"
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.RELEASE_TAG }}

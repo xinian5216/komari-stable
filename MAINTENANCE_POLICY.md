@@ -47,7 +47,7 @@
 | --- | --- |
 | 正式 Release 资产（各平台二进制、`SHA256SUMS`） | 已存在且**字节完全一致** → 视为完成并跳过；字节不同 → 立即 FAIL（`immutable release asset mismatch`）。**永不覆盖**，也不通过"删除旧资产再上传"绕过。 |
 | 固定版本镜像 tag（`ghcr.io/xinian5216/komari-stable:v1.5.0-stable.N`） | tag 已存在 → 直接 FAIL；一经发布不得指向新的 digest。 |
-| 浮动镜像 tag（`...:stable`） | 允许随最新正式 Release 更新。 |
+| 历史浮动镜像 tag（`...:stable`） | 自 `v1.5.0-stable.4` 起冻结；后续 Release 不再创建、移动或覆盖。 |
 | `workflow_dispatch` | 只能**补齐缺失资产**；不提供"覆盖重发"的能力。 |
 | 发布来源 | preflight 必须来自受保护的 `stable`；tag commit 不在 `stable` 历史中，或该 commit 的四个必需检查未全部成功时，立即 FAIL 且不构建/上传。 |
 
@@ -127,8 +127,9 @@ Issue → 复现 → 根因 → 写失败测试（failing test） → 最小修�
 2. 只在四个必需检查全部成功的 `stable` commit 上打 tag `v1.5.0-stable.N` 并创建 GitHub Release；
    release preflight 会再次核对 tag 的 `stable` 祖先关系及该精确 commit 的检查结果，失败则不构建或上传。
 3. Docker：
-   - 浮动 tag `stable` 指向最新稳定发布；
-   - 不可变 tag `1.5.0-stable.N` **永不覆盖**。
+   - 只发布不可变 tag `v1.5.0-stable.N`，且**永不覆盖**；
+   - 不发布或移动 `stable` / `latest` 浮动 tag，避免 Watchtower 等工具在管理员未确认时自动升级面板；
+   - 已存在的 `stable` 历史 tag 冻结在最后一次发布的 digest，不删除、不重写。
 4. 发布资产、源码 tag、Docker tag 必须对应**同一个 commit**。
 
 ### 分支与 tag 的关系（发布后）
@@ -140,7 +141,8 @@ Issue → 复现 → 根因 → 写失败测试（failing test） → 最小修�
 - **文档更新不改变旧 Release 的二进制**：README / UPSTREAM / 审计文档的后续修改只影响分支，
   不影响已发布资产；用户按 tag 拉取的产物与其校验和保持不变。
 - **禁止 force-move 已发布的 tag**；如需修正问题，发布新版本（`1.5.0-stable.1`、…），而不是移动旧 tag。
-- 版本 tag（如 `v1.5.0-stable.0`）**不可覆盖**；仅浮动 tag（`stable`、`:stable` 镜像标签）随最新发布移动。
+- 版本 tag（如 `v1.5.0-stable.0`）**不可覆盖**；Git 分支 `stable` 继续前进，但同名 Docker
+  浮动标签已冻结，不再随发布移动。
 5. 发布说明中必须给出升级方法、回滚方法与兼容性影响。
 
 ## 10. 回滚规程

@@ -217,6 +217,11 @@ printf '
 check_file_absent "stable-release.yml never derives the guard from the triggering branch" "${RELEASE_YML}" "github.ref_name"
 check_file_absent "stable-release.yml never fetches a branch for the guard" "${RELEASE_YML}" "FETCH_HEAD"
 check_file_contains "stable-release.yml refuses legacy tags explicitly" "${RELEASE_YML}" "[ ! -f scripts/release-guard.sh ]"
+check_file_contains "stable releases publish exactly the immutable release image tag" "${RELEASE_YML}" 'tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.RELEASE_TAG }}'
+check_file_absent "stable releases never publish the floating :stable image tag" "${RELEASE_YML}" '${REGISTRY}/${IMAGE_NAME}:stable'
+check_file_absent "stable releases never publish the floating :latest image tag" "${RELEASE_YML}" '${REGISTRY}/${IMAGE_NAME}:latest'
+check_file_absent "the default Compose deployment never follows a floating :stable image tag" "${ROOT}/compose.yaml" 'ghcr.io/xinian5216/komari-stable:stable'
+check_file_absent "the default Compose deployment never follows a floating :latest image tag" "${ROOT}/compose.yaml" 'ghcr.io/xinian5216/komari-stable:latest'
 
 release_tag_refs="$(grep -c 'ref: \${{ env.RELEASE_TAG }}' "${RELEASE_YML}" 2>/dev/null || true)"
 if [ "${release_tag_refs:-0}" -ge 4 ]; then

@@ -37,6 +37,9 @@
 
 ### Changed
 
+- **Server 更新改为仅提醒、必须人工触发（Issue #22）**：GitHub 正式 Release 仍供管理后台检测并显示
+  新版本与 Release Notes，但发布工作流不再创建或移动 Docker `stable` / `latest` 浮动标签，只推送
+  与 Release 同名的不可变 `v1.5.0-stable.N` 标签。历史 `:stable` 保持冻结，不删除、不重写。
 - **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
   先从 `komari-web-stable@v1.5.0-stable.1` 更新到修复 PWA fallback 的
   `v1.5.0-stable.2`，再更新到彻底删除远程命令、终端、Agent 文件管理 UI 与专用依赖的
@@ -50,6 +53,8 @@
 
 ### Compatibility
 
+- 不修改数据库、Agent/API、配置格式或后台版本提示。使用不可变 Docker tag 的部署不受影响；仍引用历史
+  `:stable` 的容器将停留在最后一次已发布摘要，不会再被新 Release 自动推动升级。
 - 不修改数据库 Schema、Agent v2 已有字段、配置格式或 Docker 部署方式。任务与结果表保留，便于回滚；
   启动时仅把 `exit_code IS NULL` 的遗留任务结果标记为取消，已完成历史不变。
 - 旧 Agent 仍可连接、上报监控、执行 ping 和接收普通消息。旧 `agent.taskResult` / `agent.file.result`
@@ -60,6 +65,8 @@
 
 ### Upgrade
 
+- 以后升级 Server 必须由管理员显式执行：裸机重新运行升级脚本；Docker 先把镜像 tag 改为目标
+  `v1.5.0-stable.N`，再手动 pull/recreate。后台红色更新图标只提示，不执行升级。
 - 按常规方式替换二进制或更新镜像。首次启动会在版本升级备份完成后取消遗留未完成远控任务；
   无需 Schema 迁移。升级前应确认自动备份所需磁盘空间。
 
