@@ -62,7 +62,7 @@ jobs:
     steps:
       # 安全边界：preflight 必须来自受保护的 stable，而不是待验证的 tag。
       # 否则任意临时分支都能在自己的 tag 中篡改校验程序后自我放行。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: stable
           fetch-depth: 0
@@ -81,7 +81,7 @@ jobs:
     needs: release-preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -118,7 +118,7 @@ jobs:
             ext: ".exe"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -134,7 +134,7 @@ jobs:
       - uses: ./.github/actions/restore-assets
         with:
           artifact-name: komari-assets
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -159,7 +159,7 @@ jobs:
             -ldflags="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${VERSION} -X github.com/komari-monitor/komari/utils.VersionHash=${GITHUB_SHA}" \
             -o "$NAME" .
           ls -la "$NAME"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: komari-${{ matrix.goos }}-${{ matrix.goarch }}
           path: komari-${{ matrix.goos }}-${{ matrix.goarch }}*
@@ -189,7 +189,7 @@ jobs:
       # 需要仓库内容：上传前用 scripts/release-guard.sh 校验（保持不可变语义）。
       # checkout 被发布的 tag（而不是触发本次运行的 ref）：补缺重跑同样使用该 tag 自己的
       # guard，于是未来 stable 分支的改动永远无法改变过去 Release 的不可变规则。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -201,7 +201,7 @@ jobs:
             echo "::error::this legacy release does not contain the immutable release guard; automatic repair is refused"
             exit 1
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: komari-*
           path: dist
@@ -252,7 +252,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -265,14 +265,14 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: komari-linux-*
           path: .
           merge-multiple: true
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -287,7 +287,7 @@ jobs:
             "${REGISTRY}/${IMAGE_NAME}:${RELEASE_TAG}" \
             "${REGISTRY}/${IMAGE_NAME}:v1.5.0-stable.4"
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           push: true
