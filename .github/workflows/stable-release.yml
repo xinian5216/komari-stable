@@ -62,7 +62,7 @@ jobs:
     steps:
       # 安全边界：preflight 必须来自受保护的 stable，而不是待验证的 tag。
       # 否则任意临时分支都能在自己的 tag 中篡改校验程序后自我放行。
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: stable
           fetch-depth: 0
@@ -81,7 +81,7 @@ jobs:
     needs: release-preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -118,7 +118,7 @@ jobs:
             ext: ".exe"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -189,7 +189,7 @@ jobs:
       # 需要仓库内容：上传前用 scripts/release-guard.sh 校验（保持不可变语义）。
       # checkout 被发布的 tag（而不是触发本次运行的 ref）：补缺重跑同样使用该 tag 自己的
       # guard，于是未来 stable 分支的改动永远无法改变过去 Release 的不可变规则。
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
@@ -252,7 +252,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Require the release guard from this release
