@@ -23,7 +23,8 @@
 3. **脚本自身分发地址**：如提供"一键安装"命令，形如
    `curl -fsSL <raw 地址>/install-komari.sh | bash`，raw 地址指向 `xinian5216/komari-stable`。
    README 已提供一键安装、官方实例原地迁移、状态检查和回滚命令。
-4. **Docker tag 策略**：`stable`（浮动）+ `1.5.0-stable.N`（不可变，永不覆盖）。
+4. **Docker tag 策略**：只发布 `v1.5.0-stable.N` 不可变 tag；历史 `stable` 浮动 tag 自
+   `v1.5.0-stable.4` 起冻结，不删除、不重写。管理员必须显式修改版本 tag 才会升级面板。
 5. **镜像代理**：如需国内加速，通过环境变量 `KOMARI_RELEASE_BASE` / `KOMARI_GITHUB_API_BASE` 覆盖，
    不要改动脚本正文。
 

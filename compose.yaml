@@ -1,9 +1,9 @@
 # Komari Stable — 最小可用 Compose 示例
 # 数据持久化在 ./data（容器内 /app/data）；不要删除该目录/卷。
-# 生产环境建议把 image 换成固定版本 tag（例如 v1.5.0-stable.0）以便复现与回滚。
+# 面板更新必须由管理员显式修改这个不可变版本 tag；正式 Release 不会自动改动容器。
 services:
   komari:
-    image: ghcr.io/xinian5216/komari-stable:stable
+    image: ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
     container_name: komari
     ports:
       - "25774:25774"

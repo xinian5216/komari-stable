@@ -33,6 +33,9 @@
 
 版本号格式：`1.5.0-stable.1`、`1.5.0-stable.2`…… 依次递增；除非出现大型功能变化，不会升级为 `1.6.0`。
 
+发布新版本只会让管理后台出现“有新版本”提示，**不会自动替换或重启 Server**。裸机升级必须由管理员
+显式运行安装脚本的升级动作；Docker 必须显式修改为新的不可变版本 tag 后重建容器。
+
 ### 部署、迁移与升级
 
 一键安装脚本：`install-komari.sh`（本仓库自带，发布源即本仓库，不依赖上游）。
@@ -59,25 +62,21 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-stable/stable/ins
 容器内工作目录 `/app`，数据在 `/app/data`，监听 `25774`。
 
 ```bash
-# 浮动 tag：始终跟随最新 stable 版本
+# 固定版本 tag：发布后不可变，不会在新 Release 出现时自动更新
 docker run -d --name komari \
   -p 25774:25774 \
   -v komari-data:/app/data \
   --restart unless-stopped \
-  ghcr.io/xinian5216/komari-stable:stable
-
-# 固定版本 tag（生产环境推荐：可复现、可回滚）
-docker run -d --name komari \
-  -p 25774:25774 \
-  -v komari-data:/app/data \
-  --restart unless-stopped \
-  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
+  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
 ```
 
 - `-p 25774:25774`：面板端口（镜像内 `KOMARI_LISTEN=0.0.0.0:25774`）。
 - `-v ...:/app/data`：**必须挂载**，主库、metrics 库、配置、插件与主题都在这里；镜像本身未声明 VOLUME。
 - `--restart unless-stopped`：随主机重启自动恢复。
-- 强调可复现性的生产环境，建议固定到 `v1.5.0-stable.2` 这类**不可变版本 tag**，而不是 `stable` 浮动 tag。
+- Server 只发布 `v1.5.0-stable.N` 这类**不可变版本 tag**。历史 `:stable` 镜像标签冻结在
+  `v1.5.0-stable.4` 的摘要，不再随后续 Release 移动；不要把它用于新部署。
+- 即使主机运行 Watchtower 等容器更新器，固定版本 tag 也不会因新 Release 自动变化。升级时必须由管理员
+  先阅读后台提示与 Release Notes，再显式修改 tag。
 
 #### 3. Docker Compose
 
@@ -86,7 +85,7 @@ docker run -d --name komari \
 ```yaml
 services:
   komari:
-    image: ghcr.io/xinian5216/komari-stable:stable
+    image: ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
     container_name: komari
     ports:
       - "25774:25774"
@@ -123,10 +122,10 @@ docker rename <旧容器名> komari-old-$(date +%F)
 # 3) 用原挂载创建新的 komari 容器（此时名称已空闲，不会 name conflict）
 #    named volume：
 docker run -d --name komari -p 25774:25774 -v <卷名>:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
 #    bind mount（宿主目录与旧容器保持一致）：
 docker run -d --name komari -p 25774:25774 -v <宿主机目录>:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
 
 # 4) 验证新实例：面板可登录、节点在线、历史数据完整
 # 5) 验证成功后再由你决定是否删除旧容器/旧镜像；本流程不自动删除任何容器或数据卷
@@ -197,6 +196,7 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 # 或交互菜单：curl -fsSL <同上> | sudo bash → 选 2) 升级
 
 # Server（Docker）：
+# 先把 compose.yaml 的 image 改为目标不可变 tag，再显式执行：
 docker compose pull && docker compose up -d
 #   或 docker run：先 docker pull 新 tag，重建容器时必须保持同一挂载
 #   （named volume 名或 bind mount 宿主机路径不变；必要时先 docker rename 旧容器以释放名称）
@@ -315,10 +315,9 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 
 # docker (no login required; anonymous pull verified)
 docker run -d --name komari -p 25774:25774 -v komari-data:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:stable
-# pin a release tag for reproducible production deployments:
-#   ghcr.io/xinian5216/komari-stable:v1.5.0-stable.2
-# compose: see compose.yaml; update with `docker compose pull && docker compose up -d`;
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+# releases only publish immutable version tags; edit the tag explicitly before
+# running `docker compose pull && docker compose up -d`.
 # roll back by switching the image tag back and recreating the container (same data volume).
 ```
 

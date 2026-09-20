@@ -96,6 +96,9 @@ docker run --rm -p 25774:25774 -v "$PWD/data:/app/data" komari-stable:local
 | 随包主题安装/失败/升级矩阵 | GitHub Actions 可复用工作流 | `bundled-theme-test.yml`，由 `stable-ci.yml` 调用 |
 | 发布（二进制 + Docker） | 第 2/5 节 | `stable-release.yml`（release published 触发） |
 
+Server Docker 发布只推送与 Release 同名的不可变 `vX.Y.Z-stable.N` tag；不得发布或移动
+`stable` / `latest`。后台仍可读取 Release feed 提示新版，但运行中的面板不会因正式 tag 自动升级。
+
 发布作业先从受保护的 `stable` 分支运行 `scripts/release-preflight.sh`：正式 tag 必须匹配
 `vX.Y.Z-stable.N`、指向 `stable` 历史中的 commit，且该 commit 的 `required-gate`、
 `admin-sw-gate`、`security-gate`、`secret-gate` 都必须由 GitHub Actions 成功完成。离线正反向自测：
