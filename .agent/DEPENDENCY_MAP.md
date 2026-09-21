@@ -83,5 +83,5 @@ React 19 + Vite + TypeScript + Radix UI + Tailwind 4 + recharts；构建产物�
 ## 已知依赖问题（详见 TECH_DEBT.md）
 
 - `golang.org/x/text@v0.33.0`、`golang.org/x/net@v0.41.0`：govulncheck **代码可达**漏洞；
-- `golang.org/x/crypto@v0.39.0`、`github.com/klauspost/compress@v1.17.11`：当前不可达，随安全升级处理；
+- `golang.org/x/crypto` 已升至 `v0.52.0`（13 条 ssh 公告关闭；`GO-2026-5932` openpgp 无修复版本、未导入、跟踪中）、`github.com/klauspost/compress@v1.17.11`：当前不可达，随安全升级处理；
 - `github.com/golang/protobuf`：已弃用（间接依赖）。

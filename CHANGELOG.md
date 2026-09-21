@@ -16,6 +16,13 @@
 
 ### Fixed / Security
 
+- **升级 `golang.org/x/crypto` 至 `v0.52.0`（模块级加固）**：关闭 Dependabot 当前开放的全部 13 条
+  x/crypto/ssh 公告（CVE-2026-39827~39835、42508、46595~46598，first_patched_version 均为
+  v0.52.0）。本仓库仅导入 blake2b/blake2s/chacha20poly1305/ripemd160/scrypt/sha3 子包
+  （`pkg/jsruntime/crypto`），未导入受影响的 ssh 子包，漏洞代码路径不可达，属供应链与纵深加固。
+  v0.52.0 的模块依赖（x/net v0.54.0 / x/sys v0.45.0 / x/term v0.43.0 / x/text v0.37.0）均不高于
+  当前选择版本，无连带升级。GO-2026-5932（openpgp 子包，上游标注无修复版本）未导入、继续跟踪。
+  Compatibility：无数据库 / Agent / Docker / API / 配置影响，无用户可见行为变化。
 - **修复一键安装管道模式立即退出**：`curl ... | sudo bash` 从 stdin 执行时不再被误判为
   sourced 脚本，也不会把脚本正文占用的 stdin 当成交互输入。存在控制终端时，语言选择与后续菜单
   统一从 `/dev/tty` 读取；下载到文件执行、无终端参数模式和测试 source 行为保持兼容。

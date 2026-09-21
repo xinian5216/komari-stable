@@ -9,7 +9,7 @@
 | 1 | `web/api/public/login.go` | 会话 Cookie 未设置 `Secure` 属性；管理接口无 CSRF token，仅依赖浏览器 `SameSite=Lax` 兜底 | 在 HTTP（非 HTTPS）部署下可被中间人利用；老浏览器下 CSRF 风险 | 上游遗留设计。不要在稳定分支重构；建议在文档中强调必须使用 HTTPS。若未来出现实际利用，单独评估 |
 | 2 | `internal/config/settings.go` | `ssrf_protection_enabled` 默认 `false`（主题/插件市场、远程导入可访问内网） | 服务端可被诱导访问内网地址 | 已在 `SECURITY.md` 运维建议中提示；是否改默认值需维护者决策（会改变用户可见行为） |
 | 3 | 依赖 | `golang.org/x/text@v0.33.0`、`golang.org/x/net@v0.41.0` 存在**代码可达**漏洞（另有 9+22 个不可达） | 见 `BASELINE_AUDIT.md` §6 | 计划在 `1.5.0-stable.1` 以最小升级方式处理 |
-| 4 | 依赖 | `golang.org/x/crypto@v0.39.0` 多条公告（当前不可达）；`GO-2026-5932` 上游标注"无修复版本" | 潜在 | 跟踪上游；随安全升级批次处理 |
+| 4 | 依赖 | `golang.org/x/crypto`：13 条 ssh 公告已随 `v0.52.0` 升级关闭；`GO-2026-5932`（openpgp 子包，上游标注"无修复版本"）仍开放，但 openpgp 未被导入 | 潜在（模块级） | 跟踪上游 openpgp 通告；后续随安全升级批次处理 |
 
 ## 构建 / CI
 
