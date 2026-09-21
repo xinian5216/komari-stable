@@ -5,6 +5,32 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+if [ "${1:-}" = "--tty-read-probe" ]; then
+    # shellcheck source=/dev/null
+    source "$ROOT/install-komari.sh"
+    REPLY=""
+    read_user_input
+    printf 'tty-input=%s\n' "$REPLY"
+    exit 0
+fi
+
+stdin_help_output="$(bash -s -- --help < "$ROOT/install-komari.sh" 2>&1)"
+printf '%s\n' "$stdin_help_output" | grep -Fq 'Komari Stable installer'
+if printf '%s\n' "$stdin_help_output" | grep -Fq 'return: can only'; then
+    echo 'FAIL: stdin execution was mistaken for a sourced installer' >&2
+    exit 1
+fi
+
+tty_probe_output="$(
+    printf '2\n' | script -qefc \
+        "bash '$ROOT/scripts/tests/test-installer-migration.sh' --tty-read-probe" \
+        /dev/null
+)"
+if ! printf '%s\n' "$tty_probe_output" | grep -Fq 'tty-input=2'; then
+    echo 'FAIL: piped installer did not read interactive input from /dev/tty' >&2
+    exit 1
+fi
+
 # shellcheck source=/dev/null
 source "$ROOT/install-komari.sh"
 
