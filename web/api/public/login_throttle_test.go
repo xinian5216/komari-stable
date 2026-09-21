@@ -397,12 +397,15 @@ func TestLoginThrottleIgnoresSpoofedForwardedFor(t *testing.T) {
 	resetLoginLimiters(t)
 	router := newLoginTestRouter()
 
+	// Distinct usernames keep the account bucket out of the picture; only
+	// the source bucket (one RemoteAddr, rotating spoofed forwarded
+	// headers) can trigger.
 	for i := 0; i < loginSourceBurst; i++ {
-		w := performLogin(router, "203.0.113.150:1000", "admin", "whatever", "",
+		w := performLogin(router, "203.0.113.150:1000", fmt.Sprintf("spoof-%d", i), "whatever", "",
 			fmt.Sprintf("192.0.2.%d", 200+i))
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	}
-	w := performLogin(router, "203.0.113.150:1000", "admin", "whatever", "", "192.0.2.250")
+	w := performLogin(router, "203.0.113.150:1000", "spoof-final", "whatever", "", "192.0.2.250")
 	assert.Equal(t, http.StatusTooManyRequests, w.Code,
 		"spoofed X-Forwarded-For must not bypass the source limiter")
 }
@@ -411,9 +414,10 @@ func TestLoginPasswordDisabledKeepsForbidden(t *testing.T) {
 	resetLoginLimiters(t)
 	router := newLoginTestRouter()
 
-	// Exhaust the source bucket first.
+	// Exhaust the source bucket first (distinct usernames keep the account
+	// bucket out of the picture).
 	for i := 0; i < loginSourceBurst; i++ {
-		performLogin(router, "203.0.113.160:1000", "admin", "whatever", "", "")
+		performLogin(router, "203.0.113.160:1000", fmt.Sprintf("disabled-%d", i), "whatever", "", "")
 	}
 
 	assert.NoError(t, config.Set(config.DisablePasswordLoginKey, true))
