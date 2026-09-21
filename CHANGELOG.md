@@ -16,6 +16,9 @@
 
 ### Fixed / Security
 
+- **修复一键安装管道模式立即退出**：`curl ... | sudo bash` 从 stdin 执行时不再被误判为
+  sourced 脚本，也不会把脚本正文占用的 stdin 当成交互输入。存在控制终端时，语言选择与后续菜单
+  统一从 `/dev/tty` 读取；下载到文件执行、无终端参数模式和测试 source 行为保持兼容。
 - **移除高风险远程控制面（Issue #2）**：服务端不再提供远程命令、Web 终端、任务下发和 Agent
   远程文件管理。相关实现与 `admin:exec`、任务、终端、远程文件 RPC 已删除；旧 HTTP 路径统一返回
   `410 Gone`，未知旧 RPC 返回 `Method not found`。服务端过滤 Agent 上报的 `exec` / `terminal` /

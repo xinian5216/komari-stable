@@ -743,6 +743,17 @@ screen_is_interactive() {
     [ -t 2 ]
 }
 
+# curl | bash 会占用 stdin 传递脚本正文；交互输入必须改从控制终端读取。
+# 无控制终端时仍回退到 stdin，保留 CI、重定向输入和 source 后测试的行为。
+read_user_input() {
+    REPLY=""
+    if screen_is_interactive && [ -c /dev/tty ]; then
+        IFS= read -r REPLY </dev/tty
+    else
+        IFS= read -r REPLY
+    fi
+}
+
 render_screen() {
     if screen_is_interactive; then
         clear >&2 2>/dev/null || true
@@ -792,9 +803,10 @@ ui_menu() {
 
     printf '\n%s' "$(msg input_option)" >&2
     local choice
-    if ! IFS= read -r choice; then
+    if ! read_user_input; then
         return 1
     fi
+    choice="$REPLY"
     printf '%s\n' "$choice"
 }
 
@@ -814,9 +826,10 @@ ui_input() {
         printf '%s' "$prompt" >&2
         printf '%s' "$(msg input_default "$default")" >&2
     fi
-    if ! IFS= read -r input; then
+    if ! read_user_input; then
         return 1
     fi
+    input="$REPLY"
 
     if [ -z "$input" ]; then
         printf '%s\n' "$default"
@@ -840,9 +853,10 @@ ui_yesno() {
         printf '%s' "$prompt" >&2
         printf '%s' "$(msg yes_no)" >&2
     fi
-    if ! IFS= read -r confirm; then
+    if ! read_user_input; then
         return 1
     fi
+    confirm="$REPLY"
 
     case "$confirm" in
         [Nn]|[Nn][Oo]|否|不)
@@ -867,7 +881,7 @@ ui_msgbox() {
 
 ui_pause() {
     printf '%s ' "$(msg press_enter)" >&2
-    IFS= read -r _ || true
+    read_user_input || true
 }
 
 # 选择语言。语言菜单本身保持中英双语，默认简体中文。
@@ -881,9 +895,10 @@ select_language() {
         printf '  2) 简体中文\n\n' >&2
         printf '%s' "$(msg language_input)" >&2
 
-        if ! IFS= read -r choice; then
+        if ! read_user_input; then
             exit 0
         fi
+        choice="$REPLY"
 
         case "$choice" in
             1)
@@ -1993,7 +2008,8 @@ print_status_report() {
 }
 
 # 被 shell 测试 source 时只加载函数，不执行安装器入口。
-if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+# bash 从 stdin 执行脚本时 BASH_SOURCE[0] 为空，不能把它误判成 source。
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" != "$0" ]; then
     return 0
 fi
 
