@@ -26,7 +26,9 @@ require github.com/dop251/base64dec v0.0.0-20231022112746-c6c9f9a96217 // indire
 
 // Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto #1
 // golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange #3
-require golang.org/x/crypto v0.51.0
+// v0.52.0：关闭 x/crypto/ssh 的 13 条已发布公告（CVE-2026-39827~39835、42508、46595~46598，
+// first_patched_version 均为 v0.52.0）。本仓库未导入 ssh 子包，属模块级供应链加固，漏洞路径不可达。
+require golang.org/x/crypto v0.52.0
 
 // HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net #2
 // golang.org/x/net vulnerable to Cross-site Scripting #4
