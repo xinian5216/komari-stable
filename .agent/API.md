@@ -11,7 +11,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/ping` | 健康检查（返回 `pong`） |
-| POST | `/api/login` | 登录（可能返回需 2FA 的下一步） |
+| POST | `/api/login` | 登录（可能返回需 2FA 的下一步；过量请求返回 `429`） |
 | GET | `/api/logout`、`/api/oauth`、`/api/oauth_callback` | 登出 / OAuth 流程 |
 | GET | `/api/me`、`/api/nodes`、`/api/public`、`/api/version` | 公开信息（RPC2 绑定） |
 | GET | `/api/recent/:uuid`、`/api/records/{load,ping}`、`/api/task/ping` | 记录查询（RPC2 绑定） |
