@@ -5,8 +5,8 @@
     "embedded_default_frontend": {
       "role": "embedded core frontend: admin panel, recovery/restricted pages and the fallback theme",
       "repository": "xinian5216/komari-web-stable",
-      "tag": "v1.5.0-stable.3",
-      "commit": "8364f47105fd91a0ba529eea020278077dfae50d",
+      "tag": "v1.5.0-stable.4",
+      "commit": "ad7ad0557805d445e638efa4acecd964eb0df1b8",
       "build": {
         "node_version": "23",
         "install": "npm ci",
@@ -20,13 +20,13 @@
     "bundled_preferred_theme": {
       "role": "bundled preferred frontend theme, seeded into data/theme/next for fresh installations only",
       "repository": "xinian5216/komari-next-stable",
-      "tag": "v1.4.19-stable.1",
-      "commit": "96a4bd966f164ff681d15da2f6e2d4ab682539ff",
+      "tag": "v1.4.19-stable.5",
+      "commit": "9b579fe4e4801d1388e3c7db5189710de50b3c86",
       "asset": "dist-release.zip",
-      "asset_url": "https://github.com/xinian5216/komari-next-stable/releases/download/v1.4.19-stable.1/dist-release.zip",
-      "sha256": "b9001cbbbbc4c1add0ff850a1b0ddb854e9df1d3173e3e54628d4337de0b19d6",
+      "asset_url": "https://github.com/xinian5216/komari-next-stable/releases/download/v1.4.19-stable.5/dist-release.zip",
+      "sha256": "3abf9f4246be148686517874edbc874dc6482114391c5db5d8f77914164bde68",
       "theme_short": "next",
-      "theme_version": "1.4.19",
+      "theme_version": "1.4.19-stable.5",
       "outputs": [
         "web/public/bundledTheme/next.zip"
       ]

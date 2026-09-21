@@ -43,18 +43,24 @@
 - **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
   先从 `komari-web-stable@v1.5.0-stable.1` 更新到修复 PWA fallback 的
   `v1.5.0-stable.2`，再更新到彻底删除远程命令、终端、Agent 文件管理 UI 与专用依赖的
-  `v1.5.0-stable.3`（`8364f47105fd91a0ba529eea020278077dfae50d`，不可变 tag）。
+  `v1.5.0-stable.3`，本次继续更新到修复同基础版本 stable 修订比较的
+  `v1.5.0-stable.4`（`ad7ad0557805d445e638efa4acecd964eb0df1b8`，不可变 tag）。后台现在会把
+  `1.5.0-stable.3 -> stable.5/stable.6` 识别为新版本并显示红色更新图标；检查只提醒，不自动升级。
   `/admin`、`/manage`、`/install`、`/database-recovery` 继续避开 Workbox navigation fallback，
-  `/terminal` 请求继续到达 Server 的 `410 Gone` tombstone。该 Web Release 的
-  `dist-release.zip` 已独立核验为
-  `sha256:ab7c05ccd6361fcc3f645378bd8dfd0904b5b298e179b2532531f5860d7a6cba`；Server 构建仍按锁定
-  commit 执行 `npm ci` 与 `npm run build`，不依赖该附件。随包首选主题
-  `komari-next-stable@v1.4.19-stable.1` **保持不变**。
+  `/terminal` 请求继续到达 Server 的 `410 Gone` tombstone。Server 构建按锁定 commit 执行
+  `npm ci` 与 `npm run build`。
+- **随包首选主题重新 pin**：`bundled_preferred_theme` 从
+  `komari-next-stable@v1.4.19-stable.1` 更新为 `v1.4.19-stable.5`
+  （`9b579fe4e4801d1388e3c7db5189710de50b3c86`，不可变 tag）。锁定的 `dist-release.zip`
+  SHA256 为 `3abf9f4246be148686517874edbc874dc6482114391c5db5d8f77914164bde68`，包内 manifest
+  版本为 `1.4.19-stable.5`，因此全新安装的主题管理页能显示准确 stable 修订号。既有实例不会被
+  自动覆盖，需管理员点击“更新主题”。
 
 ### Compatibility
 
-- 不修改数据库、Agent/API、配置格式或后台版本提示。使用不可变 Docker tag 的部署不受影响；仍引用历史
-  `:stable` 的容器将停留在最后一次已发布摘要，不会再被新 Release 自动推动升级。
+- 不修改数据库、Agent/API、配置格式或 Docker 部署方式。后台版本提示仅修正 stable 修订比较；
+  使用不可变 Docker tag 的部署不受影响；仍引用历史 `:stable` 的容器将停留在最后一次已发布摘要，
+  不会再被新 Release 自动推动升级。
 - 不修改数据库 Schema、Agent v2 已有字段、配置格式或 Docker 部署方式。任务与结果表保留，便于回滚；
   启动时仅把 `exit_code IS NULL` 的遗留任务结果标记为取消，已完成历史不变。
 - 旧 Agent 仍可连接、上报监控、执行 ping 和接收普通消息。旧 `agent.taskResult` / `agent.file.result`
