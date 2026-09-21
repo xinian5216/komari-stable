@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
@@ -41,6 +42,14 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Source throttle runs before the body is read or parsed so a flooding
+	// peer is rejected before any expensive work (password hashing today,
+	// the memory-hard KDF of the planned migration later).
+	if ok, wait := loginSources.allow(loginEnforcementSource(c), time.Now()); !ok {
+		respondLoginThrottled(c, wait)
+		return
+	}
+
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		api.RespondError(c, http.StatusBadRequest, "Invalid request body: "+err.Error())
@@ -57,8 +66,18 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// Account throttle: deny attempts for an account that is cooling down
+	// after repeated failures, regardless of which source the attempt comes
+	// from. This check must stay before password verification.
+	accountKey := loginAccountKey(data.Username)
+	if ok, wait := loginAccounts.check(accountKey, time.Now()); !ok {
+		respondLoginThrottled(c, wait)
+		return
+	}
+
 	uuid, success := accounts.CheckPassword(data.Username, data.Password)
 	if !success {
+		loginAccounts.recordFailure(accountKey, time.Now())
 		api.RespondError(c, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
@@ -66,10 +85,14 @@ func Login(c *gin.Context) {
 	user, _ := accounts.GetUserByUUID(uuid)
 	if user.TwoFactor != "" { // 开启了2FA
 		if data.TwoFa == "" {
+			// The first reply asks for the 2FA code; the account state is NOT
+			// reset here because no session exists yet.
+			loginAccounts.recordFailure(accountKey, time.Now())
 			api.RespondError(c, http.StatusUnauthorized, "2FA code is required")
 			return
 		}
 		if ok, err := accounts.Verify2Fa(uuid, data.TwoFa); err != nil || !ok {
+			loginAccounts.recordFailure(accountKey, time.Now())
 			api.RespondError(c, http.StatusUnauthorized, "Invalid 2FA code")
 			return
 		}
@@ -82,6 +105,9 @@ func Login(c *gin.Context) {
 	}
 	setSessionCookie(c, session, sessionCookieMaxAge)
 	auditlog.Log(c.ClientIP(), uuid, "logged in (password)", "login")
+	// Fully successful login (password + 2FA + session): clear the failure
+	// state only now.
+	loginAccounts.reset(accountKey)
 	api.RespondSuccess(c, gin.H{"set-cookie": gin.H{"session_token": session}})
 }
 func Logout(c *gin.Context) {

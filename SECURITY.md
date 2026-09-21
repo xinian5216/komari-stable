@@ -64,4 +64,10 @@ CORS 与 WebSocket Origin 校验默认开启。
 4. 为管理员账号启用 **2FA**；不要把面板直接裸露在公网，建议加访问控制（VPN / IP 白名单 / Basic Auth 前置）。
 5. 定期备份 `data/` 目录（含 `komari.db` 与 `metrics.db`），并在升级后确认
    `data/backup/upgrade-*.zip` 已生成。
-6. 关注本仓库的 Release 与 `CHANGELOG.md` 的 `Security` 段。
+6. **登录限流**：`/api/login` 对过量请求返回 `429 Too Many Requests`（含 `Retry-After`）。
+   限流按两个维度独立计数：单个来源（burst 10、持续 30 次/分钟）与单个账号（连续失败
+   5 次后进入最短 5 秒、封顶 60 秒的退避冷却，无永久锁定，15 分钟无失败自动恢复）。
+   完整登录成功（密码 + 2FA + 会话）后账号失败计数清零。来源维度按 **TCP 直连对端**
+   聚合以防止伪造 `X-Forwarded-For` 绕过——因此同一反向代理 / NAT 后的用户共享一个
+   来源桶；集中登录的团队偶发 `429` 时按 `Retry-After` 重试即可（见 `TECH_DEBT.md` 条目 5/6）。
+7. 关注本仓库的 Release 与 `CHANGELOG.md` 的 `Security` 段。
