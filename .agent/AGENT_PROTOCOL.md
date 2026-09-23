@@ -9,7 +9,7 @@
 Agent 启动
  1) POST  /api/clients/v2/rpc   method=agent.basicInfo     （上报静态信息，之后默认每 5 分钟）
  2) GET   /api/clients/v2/rpc?token=…  → WebSocket 升级     （首选长连接，双向）
-       ├─ WS 可用：按 interval（默认 1s）发 agent.report，并接收服务器下发事件
+       ├─ WS 可用：按 interval（Agent 当前默认 3s）发 agent.report，并接收服务器下发事件
        └─ WS 失败：按 --max-retries / --reconnect-interval 重试 → 进入 POST fallback
  3) POST fallback：POST /api/clients/v2/rpc（JSON-RPC，可 gzip），
        服务器可在响应 result.events[] 中夹带事件；Agent 用 agent.pull 长轮询拉取

@@ -32,7 +32,7 @@ DSN 细节：主库 DSN 由 `dbcore.buildSQLiteDSN()` 组装（`_busy_timeout`�
 | --- | --- | --- |
 | ① GORM AutoMigrate | `database/dbcore/dbcore.go` | 启动时补列/建表 |
 | ② 一次性历史迁移 | `internal/migrations/*` | 处理 0.x/1.0.x/1.1.x → 现结构（时间戳 UTC 化、`configs` 从旧单行模型重建为同名 `key/value` 表、旧 ping 任务展开等）；`migrations.go:Run()` 是总入口 |
-| ③ 指标库迁移 | `pkg/metric/migrations.go`、`internal/metricstore/store_migration.go` | 指标表结构、rollup/digest 结构升级；另有跨库搬迁（`migration_store.go` + `web/migration`） |
+| ③ 指标库迁移 | `pkg/metric/migrations.go`、`internal/metricstore/store_migration.go` | 指标表结构、rollup/digest 结构升级；另有跨库搬迁（`internal/metricstore/migration_store.go` + `web/migration`） |
 
 ## 4. 升级 / 备份 / 回滚（现有安全网，勿破坏）
 
