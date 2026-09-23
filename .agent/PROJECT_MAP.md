@@ -32,7 +32,7 @@ bundled-themes.lock.json  构建期资产的唯一事实来源（repository/tag/
 .agent/        AI Agent 索引（本目录）
 scripts/       维护脚本（.agent 索引一致性、远控移除守卫、prepare-assets.py 构建期资产准备）
 e2e/           Playwright 浏览器 E2E（fresh install + Next 首页 vs `/admin` + Service Worker）
-.github/       CI/CD：11 个上游 workflow + stable-ci / stable-release / secret-scan（本 fork 新增）
+.github/       CI/CD：当前 10 个 workflow（含 stable-ci / stable-release / secret-scan；以目录现状为准）
 ```
 
 ## 构建期目录（不入库）
