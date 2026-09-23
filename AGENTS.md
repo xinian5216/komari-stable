@@ -21,8 +21,9 @@
 - ⛔ 不得修改 Agent v2 线协议、HTTP API 字段、配置格式、Docker 部署方式（只能做向后兼容的增量）。
 - ⛔ Agent 与前端分别由镜像仓库 `xinian5216/komari-agent-stable` / `xinian5216/komari-web-stable` 维护；
   对 Agent 的任何改动都必须保持 **v2 协议冻结并向后兼容**（服务端不得拒绝旧 Agent）。
-- ⛔ capability / 远控门禁必须保持三态：旧 Agent 未上报是“未知”，不能当成“明确禁用”；安全拒绝必须
-  在 Server 下发侧执行，不能只依赖 Web 隐藏入口。
+- ⛔ 远程命令、终端与 Agent 文件管理已从 Stable 移除：不论 Agent 是否上报 capability，
+  Server 均须过滤远控能力并拒绝下发远控方法；旧 Agent 未上报是“未知”，只用于监控能力的兼容判断，
+  绝不能据此重新开放远控。保留路由 `410 Gone`、RPC 注销与事件下发拒绝，不依赖 Web 隐藏入口。
 - ⛔ 禁止：全项目格式化、无意义重命名、目录大调整、框架/ORM/数据库替换、API 重设计、UI 重写、
   "为升级而升级"的依赖变更、删除现有功能、改变用户可见行为（明确 Bug 除外）。
 - ⛔ 禁止未经允许：force push、删除 tag/branch、重写已发布历史、覆盖不可变 Docker tag、删除 Release。
