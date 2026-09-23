@@ -7,7 +7,7 @@
 | 入口 | 位置 | 说明 |
 | --- | --- | --- |
 | 程序主入口 | `main.go` | 打印版本 → `cmd.Execute()` |
-| CLI 根命令 | `cmd/root.go` | 全局 flag：`-l/--listen`、`-d/--database` |
+| CLI 根命令 | `cmd/root.go` | 全局 flag：`-d/--database`、`-t/--db-type`；`-l/--listen` 在 `cmd/server.go` 的 server 子命令 |
 | 服务端启动 | `cmd/server.go` → `RunServer()` | 启动生命周期编排（见 ARCHITECTURE.md） |
 | 改管理员密码 | `cmd/chpasswd.go` | 离线工具 |
 | 关闭 2FA | `cmd/disable2FA.go` | 离线工具 |
@@ -66,4 +66,4 @@
 | 稳定分支 CI | `.github/workflows/stable-ci.yml` |
 | 发布 | `.github/workflows/stable-release.yml` |
 | 密钥扫描 | `.github/workflows/secret-scan.yml` |
-| 上游遗留 workflow（本 fork 未启用策略见 MAINTENANCE_RULES） | `.github/workflows/{build,release,snapshot,…}.yml` |
+| 其它现有 workflow | `.github/workflows/`（以目录中的文件和各自触发条件为准） |
