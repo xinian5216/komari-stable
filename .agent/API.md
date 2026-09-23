@@ -44,8 +44,9 @@
 | `public:` | 访客 | `getMe`、`getNodesInformation`、`getPublicSettings`、`getVersion`、`getClientRecentRecords`、`getRecordsByUUID`、`getPingRecords`、`getPublicPingTasks` |
 | `admin:` | 管理员 | 节点/设置/通知/插件/主题/备份/数据库维护/指标管理等；远程命令、终端、任务和远程文件方法不再注册 |
 
-绑定与传输：`transport.go`（HTTP 解析/鉴权/错误包装）、`jsonrpc/bridge.go`（REST↔RPC 桥）、
-`dispatch.go`（方法分发）、`principal.go`（调用方身份）。
+绑定与传输：`web/rpc/jsonrpc/transport.go`（HTTP 解析/鉴权/错误包装）、
+`web/rpc/jsonrpc/bridge.go`（REST↔RPC 桥）、`web/rpc/jsonrpc/dispatch.go`（方法分发）、
+`web/api/principal.go` 与 `pkg/rpc/principal.go`（调用方身份）。
 
 ## 3. 鉴权方式（三种）
 
