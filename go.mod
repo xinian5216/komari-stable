@@ -1,6 +1,6 @@
 module github.com/komari-monitor/komari
 
-go 1.25.0
+go 1.26.9
 
 require (
 	github.com/dop251/goja v0.0.0-20251008123653-cf18d89f3cf6
@@ -17,7 +17,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.45.0
+	golang.org/x/sys v0.48.0
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.26.1
 )
@@ -28,11 +28,11 @@ require github.com/dop251/base64dec v0.0.0-20231022112746-c6c9f9a96217 // indire
 // golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange #3
 // v0.52.0：关闭 x/crypto/ssh 的 13 条已发布公告（CVE-2026-39827~39835、42508、46595~46598，
 // first_patched_version 均为 v0.52.0）。本仓库未导入 ssh 子包，属模块级供应链加固，漏洞路径不可达。
-require golang.org/x/crypto v0.52.0
+require golang.org/x/crypto v0.57.0
 
 // HTTP Proxy bypass using IPv6 Zone IDs in golang.org/x/net #2
 // golang.org/x/net vulnerable to Cross-site Scripting #4
-require golang.org/x/net v0.55.0 // indirect
+require golang.org/x/net v0.60.0 // indirect
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -71,8 +71,8 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.15.0 // indirect
-	golang.org/x/sync v0.21.0
-	golang.org/x/text v0.39.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/text v0.42.0
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

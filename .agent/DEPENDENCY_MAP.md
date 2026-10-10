@@ -73,7 +73,7 @@ React 19 + Vite + TypeScript + Radix UI + Tailwind 4 + recharts；构建产物�
 
 | 工具 | 版本 | 用途 |
 | --- | --- | --- |
-| Go | 1.25.x | 编译 |
+| Go | 1.26.9 | 编译；含 2026-10 标准库安全修复 |
 | zig | 0.14.1 | CGO 交叉编译（linux/windows 全平台矩阵） |
 | Node | 22/23 | 前端构建 |
 | zstd | 任意近期版 | 主题打包 |
@@ -82,6 +82,6 @@ React 19 + Vite + TypeScript + Radix UI + Tailwind 4 + recharts；构建产物�
 
 ## 已知依赖问题（详见 TECH_DEBT.md）
 
-- `golang.org/x/text@v0.33.0`、`golang.org/x/net@v0.41.0`：govulncheck **代码可达**漏洞；
-- `golang.org/x/crypto` 已升至 `v0.52.0`（13 条 ssh 公告关闭；`GO-2026-5932` openpgp 无修复版本、未导入、跟踪中）、`github.com/klauspost/compress@v1.17.11`：当前不可达，随安全升级处理；
+- 2026-10 安全维护：`golang.org/x/net@v0.60.0` 与其要求的 x/crypto、x/sys、x/text（`v0.42.0`）及 x/sync 模块族版本。关闭本次扫描中可达的 HTTP/2 与 precis 漏洞；其余模块不随意升级。
+- `golang.org/x/crypto` 已升至 `v0.57.0`（x/net 安全版本的必需依赖）（13 条 ssh 公告关闭；`GO-2026-5932` openpgp 无修复版本、未导入、跟踪中）、`github.com/klauspost/compress@v1.17.11`：当前不可达，随安全升级处理；
 - `github.com/golang/protobuf`：已弃用（间接依赖）。

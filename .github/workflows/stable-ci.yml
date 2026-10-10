@@ -4,7 +4,7 @@ name: Komari Stable CI
 # 与上游 build.yml 的区别：
 #   1) 上游 CI 从不运行 go test —— 这里把测试作为必过项；
 #   2) 前端 ref 固定（不跟随会漂移的默认分支）；
-#   3) Go 版本显式固定（上游写死 1.23，与 go.mod 的 1.25 不一致）；
+#   3) Go 版本显式固定（上游写死 1.23，与 go.mod 的 1.26.9 不一致）；
 #   4) 新增 go vet 与 govulncheck。
 
 on:
@@ -24,7 +24,7 @@ env:
   # 构建期资产（嵌入用前端 + 随包主题）统一由 bundled-themes.lock.json 固定：
   # 仓库、tag、commit、asset、sha256 只有一份事实来源，见 scripts/prepare-assets.py。
   ASSETS_ARTIFACT: komari-assets
-  GO_VERSION: "1.25.x"
+  GO_VERSION: "1.26.9"
   GOVULNCHECK_VERSION: "v1.1.4"
   ZIG_VERSION: "0.14.1"
 
