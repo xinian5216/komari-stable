@@ -1,5 +1,9 @@
 # BUILD_TEST.md — 最短构建 / 测试路径
 
+统一插件目录位于 `plugin-market/`，不会进入 Server 二进制。仅检查目录时执行
+`node plugin-market/validate.cjs`；具备 `unzip` 的环境中加 `--remote`，下载已发布 ZIP 并校验
+SHA-256 与根 manifest。`.github/workflows/plugin-market.yml` 在目录变更时执行该检查。
+
 > 顺序是**硬性**的：**准备构建期资产 → 后端**。
 > 原因：`web/public/public.go` 用 `//go:embed defaultTheme/dist.tar.zst` 与
 > `defaultTheme/komari-theme.json` 嵌入核心前端，`web/public/bundled.go` 还用

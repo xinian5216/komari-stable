@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "plugins": [
+    {
+      "name": {
+        "zh_CN": "Komari DDNS（Stable）",
+        "en": "Komari DDNS Stable"
+      },
+      "short": "cf-ddns",
+      "description": {
+        "zh_CN": "根据 Komari 节点上报的公网 IP，自动更新 Cloudflare DNS 解析记录，实现动态域名解析。",
+        "en": "Automatically update Cloudflare DNS records from the public IP reported by a Komari node, providing dynamic DNS."
+      },
+      "author": "穿云箭",
+      "version": "0.1.4-stable.1",
+      "komari": ">=1.4.0",
+      "url": "https://github.com/xinian5216/komari-ddns-stable",
+      "download": "https://github.com/xinian5216/komari-ddns-stable/releases/download/v0.1.4-stable.1/cf-ddns-0.1.4-stable.1.zip",
+      "sha256": "fd30c8cd084398471e7dfe59567e7db567f740c39d627de5eb78a9ff0f18cf7a"
+    },
+    {
+      "name": {
+        "zh-CN": "通行密钥（Stable）",
+        "en": "Passkey Stable"
+      },
+      "short": "komari-passkey",
+      "description": {
+        "zh-CN": "为 Komari 提供通行密钥登录。安装后请前往账户页面添加并启用通行密钥。需要 Komari >=1.4.3。",
+        "en": "Passkey sign-in for Komari. After installation, open the Account page to add and enable a Passkey. Requires Komari >=1.4.3."
+      },
+      "author": "Akizon77",
+      "version": "0.1.14-stable.1",
+      "komari": ">=1.4.3",
+      "url": "https://github.com/xinian5216/komari-passkey-stable",
+      "download": "https://github.com/xinian5216/komari-passkey-stable/releases/download/v0.1.14-stable.1/komari-passkey-0.1.14-stable.1.zip",
+      "sha256": "ca41d0fb2e33bb978a65ff726c998993c4ff76dc418b37db71090db71bf44f67"
+    }
+  ]
+}
