@@ -29,10 +29,11 @@ web/public/    构建期资产嵌入点：
 internal/themebundle/   随包主题包的校验与安全解压（sha256/根 manifest/short/上限/穿越/符号链接）
 internal/bundledtheme/  把随包主题 seed 到 data/theme/<short> 的胶水（只在全新安装路径被调用）
 bundled-themes.lock.json  构建期资产的唯一事实来源（repository/tag/commit/asset/sha256）
+plugin-market/  独立维护插件的统一目录、安装说明与发布包校验；不修改默认市场配置
 .agent/        AI Agent 索引（本目录）
 scripts/       维护脚本（.agent 索引一致性、远控移除守卫、prepare-assets.py 构建期资产准备）
 e2e/           Playwright 浏览器 E2E（fresh install + Next 首页 vs `/admin` + Service Worker）
-.github/       CI/CD：当前 10 个 workflow（含 stable-ci / stable-release / secret-scan；以目录现状为准）
+.github/       CI/CD：当前 11 个 workflow（含 stable-ci / stable-release / secret-scan / plugin-market；以目录现状为准）
 ```
 
 ## 构建期目录（不入库）
