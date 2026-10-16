@@ -12,11 +12,11 @@
         "en": "Automatically update Cloudflare DNS records from the public IP reported by a Komari node, providing dynamic DNS."
       },
       "author": "穿云箭",
-      "version": "0.1.4-stable.1",
+      "version": "0.1.5-stable.1",
       "komari": ">=1.4.0",
       "url": "https://github.com/xinian5216/komari-ddns-stable",
-      "download": "https://github.com/xinian5216/komari-ddns-stable/releases/download/v0.1.4-stable.1/cf-ddns-0.1.4-stable.1.zip",
-      "sha256": "fd30c8cd084398471e7dfe59567e7db567f740c39d627de5eb78a9ff0f18cf7a"
+      "download": "https://github.com/xinian5216/komari-ddns-stable/releases/download/v0.1.5-stable.1/cf-ddns-0.1.5-stable.1.zip",
+      "sha256": "246d8cb7d35616ab811f54e621bd6dd4f6b4635166d886e50ff6d3b69b8841ed"
     },
     {
       "name": {
@@ -29,11 +29,11 @@
         "en": "Passkey sign-in for Komari. After installation, open the Account page to add and enable a Passkey. Requires Komari >=1.4.3."
       },
       "author": "Akizon77",
-      "version": "0.1.14-stable.1",
+      "version": "0.1.15-stable.1",
       "komari": ">=1.4.3",
       "url": "https://github.com/xinian5216/komari-passkey-stable",
-      "download": "https://github.com/xinian5216/komari-passkey-stable/releases/download/v0.1.14-stable.1/komari-passkey-0.1.14-stable.1.zip",
-      "sha256": "ca41d0fb2e33bb978a65ff726c998993c4ff76dc418b37db71090db71bf44f67"
+      "download": "https://github.com/xinian5216/komari-passkey-stable/releases/download/v0.1.15-stable.1/komari-passkey-0.1.15-stable.1.zip",
+      "sha256": "470206b8751a67206d625873775f46c2f9c4e04c8748ac4424f988a22a684343"
     }
   ]
 }
