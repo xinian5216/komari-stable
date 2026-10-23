@@ -17,7 +17,7 @@ permissions:
 env:
   # 构建期资产（嵌入前端 + 随包主题）由 bundled-themes.lock.json 固定，见 scripts/prepare-assets.py。
   ASSETS_ARTIFACT: komari-assets
-  GO_VERSION: "1.26.9"
+  GO_VERSION: "1.26.10"
   ZIG_VERSION: "0.14.1"
 
 jobs:

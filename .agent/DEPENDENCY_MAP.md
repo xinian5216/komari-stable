@@ -73,7 +73,7 @@ React 19 + Vite + TypeScript + Radix UI + Tailwind 4 + recharts；构建产物�
 
 | 工具 | 版本 | 用途 |
 | --- | --- | --- |
-| Go | 1.26.9 | 编译；含 2026-10 标准库安全修复 |
+| Go | 1.26.10 | 编译；含 GO-2026-6809 / CVE-2026-111943 证书信任修复 |
 | zig | 0.14.1 | CGO 交叉编译（linux/windows 全平台矩阵） |
 | Node | 22/23 | 前端构建 |
 | zstd | 任意近期版 | 主题打包 |
