@@ -34,7 +34,7 @@
 
 已应用此项的变更：
 
-- **新安装默认前台主题 = Komari Next（随包内嵌的 bundled preferred theme）**。首次进入 `1.5.0-stable.1`（尚未发布）。
+- **新安装默认前台主题 = Komari Next（随包内嵌的 bundled preferred theme）**。首次于 `1.5.0-stable.1` 引入。
   嵌入式核心前端仍为 `xinian5216/komari-web-stable`（`/admin`、recovery/restricted 与 fallback），
   既有实例升级后 `theme` 配置与 `data/theme/*` 完全不变。
 
@@ -84,7 +84,8 @@ Issue → 复现 → 根因 → 写失败测试（failing test） → 最小修�
 ## 5. 分支与版本
 
 - `upstream-baseline`：上游 `1.5.0-fix1`(`0ca87aa`) 的只读镜像，**永不修改、永不合入**。
-- `stable`：唯一维护分支，所有修复经 PR 或直接提交（小改动）进入。
+- `stable`：唯一维护分支，所有变更（含文档与小改动）经 PR 和必需门禁进入；检查名称及失败策略见
+  `.github/REQUIRED_CHECKS.md`，不得直接推送绕过分支规则。
 - 版本号 `1.5.0-stable.N`；`N` 从 0 开始递增。不擅自升级为 `1.6.0`。
 - Git 操作红线：不 force push、不删 tag/branch、不重写已发布历史、不覆盖不可变 tag。
 

@@ -12,6 +12,9 @@
 然后**按任务按需**读取 `.agent/` 下的其它索引（模块索引 / 入口 / 数据库 / API / Agent 协议 / 构建测试 /
 依赖 / 风险 / 变更影响）。
 
+涉及提交、CI 或发布时先读 `.github/REQUIRED_CHECKS.md`；检查名称和失败策略以该文件与实际 workflow
+为准。工具链版本以 `go.mod`、构建 workflow 和资产锁文件为准，不在本文件重复维护版本号。
+
 > ⛔ **禁止**一开始就递归读取整个仓库或在全仓库范围内搜索。
 > 正确路径：读索引 → 定位模块 → 读相关源码 → 必要时扩展范围。
 
@@ -40,15 +43,23 @@ Issue → 复现 → 根因 → failing test → 最小修复 → 全量测试 �
 
 ## 4. 提交前自检
 
+先按 `.agent/BUILD_TEST.md` 准备锁定的构建期资产，并配置 CGO / C 编译器，再运行下列 Go 检查。
+不得把缺少嵌入资产或工具链不匹配误判成代码回归；govulncheck 使用安全 workflow 固定的版本。
+
 ```bash
+python scripts/prepare-assets.py all
 go vet ./...
 go test ./... -count=1
 govulncheck ./...
 gitleaks git . --log-opts="--all" --config .gitleaks.toml --redact
 python scripts/check_agent_index.py
+python scripts/check_remote_control_removed.py
+python .github/scripts/check-workflow-pins.py
 ```
 
 并对接口/数据库/协议改动复核 `.agent/CHANGE_IMPACT_MAP.md`。
+根据改动执行 `.agent/BUILD_TEST.md` 中的安装、迁移、随包主题与真实浏览器回归；未执行或因环境
+跳过的项目必须说明，不能把静态检查等同于端到端验证。纯文档改动也必须通过分支要求的 CI。
 
 ## 5. 索引维护
 
@@ -61,4 +72,13 @@ python scripts/check_agent_index.py
 
 ## 7. 公开发布
 
-任何内容离开本机前往公开位置前，先做密钥/隐私扫描；历史重写、发布、推送必须获得维护者确认。
+任何内容离开本机前往公开位置前，先做密钥/隐私扫描。推送、合并、发布和生产部署按本次任务
+明确授权的范围执行；已有授权无需重复确认，仓库发布不代表获得线上部署授权。
+
+- 所有变更经 PR 进入 `stable`；必须等待 `.github/REQUIRED_CHECKS.md` 中全部门禁成功，
+  不能用成功的 CodeQL 代替依赖扫描，也不能接受失败、取消或跳过。
+- 发布前复核合并后精确 commit 的检查、tag 目标及资产来源；发布后下载核对校验和和镜像，
+  不覆盖既有 tag、资产或固定版本镜像。细节见 `.agent/BUILD_TEST.md` 和 `MAINTENANCE_POLICY.md`。
+- Web / Next 新版本发布后，Server 不会自动采用；集成时需更新 `bundled-themes.lock.json`
+  的 tag、commit、资产 SHA256 等关联字段，准备资产并执行兼容回归后重新发布。
+  不得自动替换已安装站点主题或修改用户数据。
