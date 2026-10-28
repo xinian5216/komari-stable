@@ -34,7 +34,7 @@
 | 15 | 全仓库 | 仅 3 处 TODO/FIXME 标记 | 低优先级 |
 | 16 | 主数据库 | 仅支持 SQLite（`SupportedDatabaseTypes()` 只返回 sqlite），而指标库支持三种数据库 | 属产品设计，不在稳定分支变更 |
 | 17 | `install-komari.sh` | 内嵌第三方 Lite 分支引用（`nuomiiiii/komari`）与上游仓库地址 | **已处理**：下载来源已参数化为 `REPO_OWNER`/`REPO_NAME`/`RELEASE_BASE`/`GITHUB_API_BASE`，默认指向本 fork |
-| 18 | 前端生成的 Agent 安装命令 | 当前直接引用 `raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/...`（会漂移） | **Resolved（2026-09-16 决策落地）**：镜像仓库 `xinian5216/komari-agent-stable` 已创建并发布至 `v1.5.10-stable.4`；README §5/§6 的安装与接管命令均已指向该仓库（`.agent/INSTALLERS.md` §2 有记录，但其中 Agent 版本号仍写 `v1.5.10-stable.1`，待后续文档 PR 校准） |
+| 18 | 前端生成的 Agent 安装命令 | 当前直接引用 `raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/...`（会漂移） | **Resolved（2026-09-16 决策落地）**：镜像仓库 `xinian5216/komari-agent-stable` 已创建并发布至 `v1.5.10-stable.4`；README §5/§6 的安装与接管命令、`.agent/INSTALLERS.md` §2 均已指向该仓库并记录当前版本 |
 | 19 | 前端 | `npm run lint` 有 29 条 warning（react-hooks 依赖类） | 不阻塞；不主动修 |
 
 ## 文档
