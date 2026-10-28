@@ -8,7 +8,7 @@
       "tag": "v1.5.0-stable.6",
       "commit": "4c613a2c33311f0833d99bb935bf6456c36fc816",
       "build": {
-        "node_version": "23",
+        "node_version": "22",
         "install": "npm ci",
         "script": "npm run build",
         "outputs": [

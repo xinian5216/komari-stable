@@ -62,6 +62,13 @@
 
 ### Changed
 
+- **CI 资产准备的 Node 工具链从 23 固定为 22 LTS**：`.github/actions/prepare-assets/action.yml` 的
+  `actions/setup-node` 与 `bundled-themes.lock.json` 的 `embedded_default_frontend.build.node_version`
+  同步从 `23` 改为 `22`。原因：Node 23 在 Setup Node.js 下载阶段出现二十余分钟停滞，拖慢甚至阻塞
+   prepare-assets 及后续全部 job；内嵌前端 `komari-web-stable@v1.5.0-stable.6` 的官方 CI 与浏览器
+  冒烟均使用 Node 22 完成并通过，兼容性有现成依据。Go 工具链、Web 源码锁定版本、随包主题与全部
+  业务代码不变；Compatibility：无数据库 / Agent v2 / API / 配置 / Docker 影响，构建产物仍按锁定的
+  Web commit 执行 `npm ci` 与 `npm run build`。
 - **内嵌默认前端更新到 `v1.5.0-stable.6`**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
   从 `komari-web-stable@v1.5.0-stable.4`（`ad7ad0557805d445e638efa4acecd964eb0df1b8`）更新为
   `v1.5.0-stable.6`（`4c613a2c33311f0833d99bb935bf6456c36fc816`，不可变 tag；含 `v1.5.0-stable.5`
