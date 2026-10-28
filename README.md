@@ -20,7 +20,7 @@
 - 🔒 **冻结**：数据库 Schema、Agent v2 线协议、HTTP API 行为、配置格式、Docker 部署方式。
 - 🎨 **新安装默认前台主题**：**Komari Next**（随包内嵌，原作者 **Tony Liu / `tonyliuzj`**，
   <https://github.com/tonyliuzj/komari-next> 的稳定镜像 `xinian5216/komari-next-stable`）。
-  本 fork 只做稳定镜像与兼容维护，不主张主题著作权。管理后台、终端、恢复页面与 fallback 仍使用
+  本 fork 只做稳定镜像与兼容维护，不主张主题著作权。管理后台、恢复页面与 fallback 仍使用
   嵌入式核心前端 `xinian5216/komari-web-stable`；**既有实例升级不受影响**，任何时候都能在
   后台把前台切回内置 `default` 主题。
 
@@ -67,7 +67,7 @@ docker run -d --name komari \
   -p 25774:25774 \
   -v komari-data:/app/data \
   --restart unless-stopped \
-  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+  ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11
 ```
 
 - `-p 25774:25774`：面板端口（镜像内 `KOMARI_LISTEN=0.0.0.0:25774`）。
@@ -85,7 +85,7 @@ docker run -d --name komari \
 ```yaml
 services:
   komari:
-    image: ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+    image: ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11
     container_name: komari
     ports:
       - "25774:25774"
@@ -122,10 +122,10 @@ docker rename <旧容器名> komari-old-$(date +%F)
 # 3) 用原挂载创建新的 komari 容器（此时名称已空闲，不会 name conflict）
 #    named volume：
 docker run -d --name komari -p 25774:25774 -v <卷名>:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11
 #    bind mount（宿主目录与旧容器保持一致）：
 docker run -d --name komari -p 25774:25774 -v <宿主机目录>:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11
 
 # 4) 验证新实例：面板可登录、节点在线、历史数据完整
 # 5) 验证成功后再由你决定是否删除旧容器/旧镜像；本流程不自动删除任何容器或数据卷
@@ -165,7 +165,7 @@ sudo bash /tmp/install-komari.sh --migrate --yes
 > ⚠️ **升级前请确认 Agent 兼容性**：服务端 1.5.0 起只接受 **v2 协议**。Agent 的 v2 支持自
 > **1.2.10** 引入（当时可选），**1.5.0 起 v2 成为唯一协议**。因此迁移前请确保每个节点的 Agent
 > **不低于 1.5.0**；如果个别节点仍在 1.2.10–1.4.x，需先确认它实际以 v2 上报，否则升级后无法上报。
-> 最稳妥的做法：先把所有 Agent 升级到 **v1.5.10-stable.1**（本 fork），再升级面板。
+> 最稳妥的做法：先把所有 Agent 升级到 **v1.5.10-stable.4**（本 fork），再升级面板。
 > 逐个确认方式：面板 nodes 页，或 `journalctl -u komari-agent | grep -i "protocol\|version"`。
 
 #### 5. 全新安装 Agent
@@ -315,7 +315,7 @@ curl -fsSL https://raw.githubusercontent.com/xinian5216/komari-agent-stable/stab
 
 # docker (no login required; anonymous pull verified)
 docker run -d --name komari -p 25774:25774 -v komari-data:/app/data \
-  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+  --restart unless-stopped ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11
 # releases only publish immutable version tags; edit the tag explicitly before
 # running `docker compose pull && docker compose up -d`.
 # roll back by switching the image tag back and recreating the container (same data volume).
@@ -328,7 +328,7 @@ then migrate the panel.
 Note: server 1.5.0 and later speak only the v2 protocol. Agent-side v2 support landed in
 **1.2.10** (opt-in) and became the only protocol in agent **1.5.0**, so make sure every node runs
 agent **1.5.0 or newer** before migrating the panel - safest is to move the agents to
-**v1.5.10-stable.1** first.
+**v1.5.10-stable.4** first.
 
 ## Upstream & Credits / 上游与致谢
 

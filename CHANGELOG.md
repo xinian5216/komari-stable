@@ -14,10 +14,123 @@
 
 ## Unreleased
 
-### Fixed / Security
+（暂无未发布变更。下一版本的条目在合入 `stable` 后于此累积，发布时归档到对应版本段。）
 
-- **Go 证书信任安全修复（GO-2026-6809 / CVE-2026-111943）**：最低构建版本和全部 CI / 发布工具链从 `1.26.9` 更新为 `1.26.10`，使 `crypto/x509.Certificate.Verify` 拒绝已不可信的中间证书。修复前 `govulncheck` 可从 TLS 邮件通知路径复现该告警；使用修复工具链后重新扫描验证。仅更新 Go 补丁版本，`go.sum` 与第三方依赖版本不变。Compatibility：数据库、Agent v2、API、配置格式和 Docker 部署方式不变；证书链包含被拒绝中间证书的连接将失败。Upgrade：全部门禁通过后发布新的不可变 stable tag，管理员需替换二进制或手动更新固定版本镜像；仅更新源码或系统 Go 不会修复已发布二进制。Rollback：恢复旧二进制 / 固定版本镜像并保留数据目录；旧版本仍存在此证书信任风险。
-- **2026-10 Go 安全维护**：构建工具链固定为 `1.26.9`，修复 GO-2026-6603/6604/6605/6607/6608/6609/6610/6611/6612/6613/6617 涉及的标准库漏洞；`golang.org/x/net` 升至 `v0.60.0`，连带采用它要求的 x/crypto `v0.57.0`、x/sys `v0.48.0`、x/text `v0.42.0`、x/sync `v0.23.0`。x/text 同时修复 GO-2026-6629。仅更新这一模块族，未升级框架、ORM 或其它依赖。Compatibility：最低构建版本为 Go 1.26.9；数据库、Agent v2、API、配置和 Docker 部署方式不变。Upgrade：合入并完成全部门禁后另行发布新不可变 stable tag；本次不修改已发布资产或已部署实例。Rollback：未部署前撤回本补丁即可；发布后可换回旧二进制/镜像并保留数据，但旧版本仍含上述漏洞。
+## 1.5.0-stable.11 — 已发布（2026-10-28）
+
+**基线**：同 `1.5.0-stable.10`（上游 `1.5.0-fix1` / `0ca87aa`），在 `.10` 之上增量（PR #38、#39）。
+
+### Changed
+
+- **内嵌默认前端更新到 `v1.5.0-stable.6`**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
+  从 `komari-web-stable@v1.5.0-stable.4`（`ad7ad0557805d445e638efa4acecd964eb0df1b8`）更新为
+  `v1.5.0-stable.6`（`4c613a2c33311f0833d99bb935bf6456c36fc816`，不可变 tag；含 `v1.5.0-stable.5`
+  的全部内容）。安全修复：zod 升至 4.6.7（GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404，数组校验内存耗尽），
+  `/admin/pprof` 的 `profiles` 数组增加 `.max(16)` 长度上限；fast-uri 3.1.9、serialize-javascript 7.1.4。
+  构建修复：`@types/node` 显式声明为 devDependency，重新生成 lockfile 不再丢失 Node 类型。依赖更新：
+  react/react-dom 19.3.1、@radix-ui/themes 3.3.0、tailwindcss 4.3.3 等 22 项 minor/patch。新增
+  Playwright 浏览器冒烟套件（7 用例，生产构建 + mock 后端）并作为第四个必需门禁。Server 构建仍按锁定
+  commit 执行 `npm ci` 与 `npm run build`；`/admin`、`/manage`、`/install`、`/database-recovery` 继续避开
+  Workbox navigation fallback，`/terminal` 继续返回 `410 Gone`。随包首选主题
+  `komari-next-stable@v1.4.19-stable.5` **保持不变**。既有实例不会被自动覆盖。
+- **CI 资产准备的 Node 工具链从 23 固定为 22 LTS**：`.github/actions/prepare-assets/action.yml` 的
+  `actions/setup-node` 与 `bundled-themes.lock.json` 的 `embedded_default_frontend.build.node_version`
+  同步从 `23` 改为 `22`。原因：Node 23 在 Setup Node.js 下载阶段出现二十余分钟停滞，拖慢甚至阻塞
+  prepare-assets 及后续全部 job；内嵌前端 `komari-web-stable@v1.5.0-stable.6` 的官方 CI 与浏览器
+  冒烟均使用 Node 22 完成并通过，兼容性有现成依据。Go 工具链、Web 源码锁定版本、随包主题与全部
+  业务代码不变。
+
+### Compatibility
+
+- 无 Server API、数据库 Schema、Agent v2 协议、配置格式或 Docker 部署方式变更。
+- 随包首选主题 `komari-next-stable@v1.4.19-stable.5` 保持不变（commit 与 sha256 不变）。
+- `/admin`、`/manage`、`/install`、`/database-recovery` 继续避开 Workbox navigation fallback；
+  `/terminal` 继续返回 `410 Gone`。
+- 既有实例不会被自动覆盖；运行中的面板需要管理员显式升级。
+- 仅发布不可变 Docker 版本标签 `v1.5.0-stable.11`，不创建、不移动 `stable` / `latest` 浮动标签。
+
+### Upgrade
+
+- 升级前备份 data 目录；裸机通过现有安装器选择更新，或校验 SHA256SUMS 后替换对应平台二进制；
+  Docker 改为 `ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11` 重建容器，保留 data 卷与配置。
+
+### Rollback
+
+- 停服后换回 `v1.5.0-stable.10` 二进制或不可变 Docker 标签，保留原有数据与配置；本次没有新增数据库迁移。
+
+## 1.5.0-stable.10 — 已发布（2026-10-23）
+
+**基线**：同 `1.5.0-stable.9`，在 `.9` 之上增量（PR #32、#33、#36）。
+
+### Security
+
+- **Go 证书信任安全修复（GO-2026-6809 / CVE-2026-111943）**：最低构建版本和全部 CI / 发布工具链从
+  `1.26.9` 更新为 `1.26.10`，使 `crypto/x509.Certificate.Verify` 拒绝已不可信的中间证书。修复前
+  `govulncheck` 可从 TLS 邮件通知路径复现该告警；使用修复工具链后重新扫描验证。仅更新 Go 补丁版本，
+  `go.sum` 与第三方依赖版本不变。Compatibility：数据库、Agent v2、API、配置格式和 Docker 部署方式不变；
+  证书链包含被拒绝中间证书的连接将失败，这是本次安全修复的预期行为。Upgrade：全部门禁通过后发布新的
+  不可变 stable tag，管理员需替换二进制或手动更新固定版本镜像；仅更新源码或系统 Go 不会修复已发布
+  二进制。Rollback：恢复旧二进制 / 固定版本镜像并保留数据目录；旧版本仍存在此证书信任风险。
+
+### Changed
+
+- **新增可选的稳定插件目录**：`plugin-market/`（`v1.json`、校验脚本与独立 workflow）作为可选安装源
+  发布（PR #32、#33），不改变 Server 运行时行为，不自动安装任何插件。
+
+### Compatibility
+
+- 无业务源码、数据库结构、Agent v2 协议、HTTP API 或配置格式变更（PR #36 仅更新 Go 补丁版本）。
+- 仅发布不可变 Docker 版本标签 `v1.5.0-stable.10`，不移动 `stable`/`latest`。
+
+### Upgrade / Rollback
+
+- 升级前备份数据，管理员显式替换二进制或更新固定版本镜像；回滚换回 `v1.5.0-stable.9` 并保留数据，
+  旧版本仍存在本次证书信任风险。
+
+## 1.5.0-stable.9 — 安全更新（已发布，2026-10-10）
+
+**基线**：同 `1.5.0-stable.8`，在 `.8` 之上增量（PR #29、#30）。
+
+### Security
+
+- **2026-10 Go 安全维护**：构建工具链固定为 `1.26.9`，修复 GO-2026-6603/6604/6605/6607/6608/6609/
+  6610/6611/6612/6613/6617 涉及的标准库漏洞；`golang.org/x/net` 升至 `v0.60.0`，连带采用它要求的
+  x/crypto `v0.57.0`、x/sys `v0.48.0`、x/text `v0.42.0`、x/sync `v0.23.0`。x/text 同时修复
+  GO-2026-6629。仅更新这一模块族，未升级框架、ORM 或其它依赖。Compatibility：最低构建版本为
+  Go 1.26.9；数据库、Agent v2、API、配置和 Docker 部署方式不变。Upgrade：合入并完成全部门禁后另行
+  发布新不可变 stable tag。Rollback：未部署前撤回本补丁即可；发布后可换回旧二进制/镜像并保留数据，
+  但旧版本仍含上述漏洞。
+
+### Fixed
+
+- 修复旧工具链与依赖导致的 `govulncheck` 失败；发布构建与安全检查统一使用 Go 1.26.9。
+
+### Compatibility
+
+- 无业务源码、数据库结构、Agent v2 协议、HTTP API 或配置格式变更。
+- 核心前端与随包主题继续使用原有锁定版本（`komari-web-stable@v1.5.0-stable.4`、
+  `komari-next-stable@v1.4.19-stable.5`）。
+- 仅发布不可变 Docker 版本标签 `v1.5.0-stable.9`，不移动 `stable`/`latest`。
+
+### Upgrade / Rollback
+
+- 二进制：通过现有安装器选择更新，或校验 SHA256SUMS 后替换二进制，保留 data 目录；
+  Docker：使用 `ghcr.io/xinian5216/komari-stable:v1.5.0-stable.9` 重建容器。
+- 回滚换回 `v1.5.0-stable.8` 二进制或不可变 Docker 标签；本次安全修复没有新增数据库迁移。
+
+## 1.5.0-stable.8 — 已发布（2026-09-21）
+
+**基线**：同 `1.5.0-stable.7`，在 `.7` 之上增量（PR #27、#28）。
+
+### Security
+
+- **升级 `golang.org/x/crypto` 至 `v0.52.0`（模块级加固）**：关闭 Dependabot 当前开放的全部 13 条
+  x/crypto/ssh 公告（CVE-2026-39827~39835、42508、46595~46598，first_patched_version 均为
+  v0.52.0）。本仓库仅导入 blake2b/blake2s/chacha20poly1305/ripemd160/scrypt/sha3 子包
+  （`pkg/jsruntime/crypto`），未导入受影响的 ssh 子包，漏洞代码路径不可达，属供应链与纵深加固。
+  v0.52.0 的模块依赖（x/net v0.54.0 / x/sys v0.45.0 / x/term v0.43.0 / x/text v0.37.0）均不高于
+  当前选择版本，无连带升级。GO-2026-5932（openpgp 子包，上游标注无修复版本）未导入、继续跟踪。
+  Compatibility：无数据库 / Agent / Docker / API / 配置影响，无用户可见行为变化。
 - **新增 `/api/login` 登录限流（为后续 Argon2id 迁移提供入口保护）**：未鉴权登录端点现以两个
   独立维度限流——来源维度（TCP 直连对端，burst 10、持续 30 次/分钟）与账号维度（sha256(原始
   用户名) 键控，连续失败 5 次后进入 5s→10s→20s→40s→60s 封顶的短时退避冷却；无永久锁定；
@@ -31,20 +144,140 @@
   零新增依赖。行为变化：过量登录请求可能收到 `429`；认证成功条件、错误密码（`401`）、
   2FA 交互流程与密码禁用（`403`）语义均不变。Compatibility：无数据库 / Agent / Docker /
   API 字段影响，无密码格式变化。
-- **升级 `golang.org/x/crypto` 至 `v0.52.0`（模块级加固）**：关闭 Dependabot 当前开放的全部 13 条
-  x/crypto/ssh 公告（CVE-2026-39827~39835、42508、46595~46598，first_patched_version 均为
-  v0.52.0）。本仓库仅导入 blake2b/blake2s/chacha20poly1305/ripemd160/scrypt/sha3 子包
-  （`pkg/jsruntime/crypto`），未导入受影响的 ssh 子包，漏洞代码路径不可达，属供应链与纵深加固。
-  v0.52.0 的模块依赖（x/net v0.54.0 / x/sys v0.45.0 / x/term v0.43.0 / x/text v0.37.0）均不高于
-  当前选择版本，无连带升级。GO-2026-5932（openpgp 子包，上游标注无修复版本）未导入、继续跟踪。
-  Compatibility：无数据库 / Agent / Docker / API / 配置影响，无用户可见行为变化。
+
+### Compatibility
+
+- 无数据库 schema 变化；无 Agent 协议（v2）变化；无 HTTP API 字段变化。
+- 无密码哈希格式变化：`passwd` 仍按既有格式存储，本版本不含 Argon2id、不含任何密码迁移或
+  自动升级逻辑（Argon2id 迁移为后续独立工作）。
+- 登录限流为进程内内存状态，重启即清空，回滚不会遗留账号锁定。
+- 仅发布不可变 Docker 版本标签 `v1.5.0-stable.8`，不移动 `stable`/`latest`。
+
+### Upgrade / Rollback
+
+- Docker：`docker pull ghcr.io/xinian5216/komari-stable:v1.5.0-stable.8` 后重建容器；或运行文档化
+  一键安装命令选择更新。运行中的面板不会被自动升级。
+- 回滚按既有 stable 流程（还原上一版本二进制/镜像 + `data/backup/` 备份）执行；本版本未改变
+  passwd 存储格式与数据库结构，回滚风险低。
+
+## 1.5.0-stable.7 — 已发布（2026-09-21）
+
+**基线**：同 `1.5.0-stable.6`，在 `.6` 之上增量（PR #26）。
+
+### Fixed
+
 - **修复一键安装管道模式立即退出**：`curl ... | sudo bash` 从 stdin 执行时不再被误判为
   sourced 脚本，也不会把脚本正文占用的 stdin 当成交互输入。存在控制终端时，语言选择与后续菜单
   统一从 `/dev/tty` 读取；下载到文件执行、无终端参数模式和测试 source 行为保持兼容。
+
+### Compatibility
+
+- 无数据库 Schema、迁移、Agent v2 协议、HTTP API、配置格式、Release 资产命名或 Docker 部署方式变更。
+- 文档中的 `curl ... | sudo bash` 一键命令已由合入提交修正；既有实例不会被自动修改。
+
+### Upgrade / Rollback
+
+- 重新运行文档化的一键安装命令即可；交互语言/菜单选择现在保持与终端连接。Server 升级仍为手动、仅提醒。
+- 如需要，使用上一版本 `v1.5.0-stable.6` 二进制或不可变 Docker 标签回滚。
+
+## 1.5.0-stable.6 — 已发布（2026-09-21）
+
+**基线**：同 `1.5.0-stable.5`，在 `.5` 之上增量（PR #25）。
+
+### Changed
+
+- **内嵌默认前端重新 pin 到 `v1.5.0-stable.4`**：`bundled-themes.lock.json` 的
+  `embedded_default_frontend` 从 `komari-web-stable@v1.5.0-stable.3`
+  （`8364f47105fd91a0ba529eea020278077dfae50d`）更新为 `v1.5.0-stable.4`
+  （`ad7ad0557805d445e638efa4acecd964eb0df1b8`，不可变 tag），修复同基础版本 stable 修订比较：
+  后台现在会把 `1.5.0-stable.3 -> stable.5/stable.6` 识别为新版本并显示红色更新图标；检查只提醒，
+  不自动升级。Server 构建按锁定 commit 执行 `npm ci` 与 `npm run build`。
+- **随包首选主题重新 pin 到 `v1.4.19-stable.5`**：`bundled_preferred_theme` 从
+  `komari-next-stable@v1.4.19-stable.1`（`96a4bd966f164ff681d15da2f6e2d4ab682539ff`）更新为
+  `v1.4.19-stable.5`（`9b579fe4e4801d1388e3c7db5189710de50b3c86`，不可变 tag）。锁定的
+  `dist-release.zip` SHA256 为
+  `3abf9f4246be148686517874edbc874dc6482114391c5db5d8f77914164bde68`，包内 manifest
+  版本为 `1.4.19-stable.5`，因此全新安装的主题管理页能显示准确 stable 修订号。既有实例不会被
+  自动覆盖，需管理员在主题管理中点击"更新主题"。
+
+### Compatibility
+
+- 不修改数据库 Schema、Agent v2 已有字段、HTTP API、配置格式或 Docker 部署方式。
+- 使用不可变 Docker tag 的部署不受影响；仍引用历史 `:stable` 的容器将停留在最后一次已发布摘要，
+  不会再被新 Release 自动推动升级。
+
+### Upgrade / Rollback
+
+- 手动升级到本版本一次即可（旧构建的比较代码不可靠，可能无法显示本次更新）；主题更新需在主题
+  管理中手动点击。
+- 回滚：恢复上一版本 Server 二进制/Release；主题可通过导入旧主题包回退。
+
+## 1.5.0-stable.5 — 已发布（2026-09-20）
+
+**基线**：同 `1.5.0-stable.4`，在 `.4` 之上增量（PR #23、#24）。
+
+### Changed
+
+- **Server 更新改为仅提醒、必须人工触发（Issue #22）**：GitHub 正式 Release 仍供管理后台检测并显示
+  新版本与 Release Notes，但发布工作流不再创建或移动 Docker `stable` / `latest` 浮动标签，只推送
+  与 Release 同名的不可变 `v1.5.0-stable.N` 标签。历史 `:stable` 保持冻结，不删除、不重写。
+- **供应链加固**：全部第三方 GitHub Action 固定到完整 commit SHA 并附精确版本注释；新增必需的 CI
+  策略检查，拒绝移动 Action 引用、废弃 workflow 与 `curl | shell/tar` 安装器；固定版本的
+  Gitleaks 与 Zig 归档下载后先做 SHA-256 校验再解压。
+
+### Compatibility
+
+- 无数据库或 Agent 协议变更；既有监控数据、Agent、主题与安装路径保持兼容。
+- 正式 Release 仍供管理后台检测并显示新版本与 Release Notes，但发布工作流不再创建或移动
+  Docker `stable` / `latest` 浮动标签；历史 `:stable` 保持冻结。
+
+### Upgrade / Rollback
+
+- 升级 Server 必须由管理员显式执行：裸机重新运行升级脚本；Docker 先把镜像 tag 改为目标
+  `v1.5.0-stable.N`，再手动 pull/recreate。后台红色更新图标只提示，不执行升级。
+- 回滚方式不变（换回旧二进制/旧镜像 tag，复用同一 data 卷）。
+
+## 1.5.0-stable.4 — 已发布（2026-09-19）
+
+**基线**：同 `1.5.0-stable.3`，在 `.3` 之上增量（PR #20、#21）。
+
+### Security
+
 - **移除高风险远程控制面（Issue #2）**：服务端不再提供远程命令、Web 终端、任务下发和 Agent
   远程文件管理。相关实现与 `admin:exec`、任务、终端、远程文件 RPC 已删除；旧 HTTP 路径统一返回
   `410 Gone`，未知旧 RPC 返回 `Method not found`。服务端过滤 Agent 上报的 `exec` / `terminal` /
   `file` capability，并在事件下发层再次拒绝这些方法；CI 新增静态守卫，防止后续误恢复。
+
+### Changed
+
+- **内嵌默认前端重新 pin 到 `v1.5.0-stable.3`**：`bundled-themes.lock.json` 的
+  `embedded_default_frontend` 从 `komari-web-stable@v1.5.0-stable.2`
+  （`6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d`）更新为彻底删除远程命令、终端、Agent 文件管理 UI 与
+  专用依赖的 `v1.5.0-stable.3`（`8364f47105fd91a0ba529eea020278077dfae50d`，不可变 tag）。
+  随包首选主题 `komari-next-stable@v1.4.19-stable.1` **保持不变**。
+
+### Compatibility
+
+- 不修改数据库、Agent/API、配置格式或 Docker 部署方式。任务与结果表保留，便于回滚；
+  启动时仅把 `exit_code IS NULL` 的遗留任务结果标记为取消，已完成历史不变。
+- 旧 Agent 仍可连接、上报监控、执行 ping 和接收普通消息。旧 `agent.taskResult` /
+  `agent.file.result` 报文会得到成功确认后被忽略；服务端不会向任何版本 Agent 下发远控事件。
+- 旧远控 HTTP API 有意改为 `410 Gone`，旧远控 RPC 有意改为 `Method not found`。这是安全移除，
+  不提供兼容开关。
+- 监控、告警、Ping/网络测试、备份、数据库兼容与升级保持可用。
+
+### Upgrade / Rollback
+
+- 升级方式不变（`install-komari.sh --migrate --yes`，或 Docker 换 tag）；升级过程中未完成的遗留
+  命令任务会被取消而不是执行。
+- 回退到 `1.5.0-stable.3` 的二进制/镜像即可；数据库无 schema 变化，无需回滚数据。
+
+## 1.5.0-stable.3 — 已发布（2026-09-18）
+
+**基线**：同 `1.5.0-stable.2`，在 `.2` 之上增量。
+
+### Fixed
+
 - **theme=next 时后台被 Service Worker 显示成公开首页**：fresh install 仍默认 `theme=next`，`/` 仍由
   Komari Next 提供。`/admin`、`/manage` 等核心路径强制使用嵌入式 default frontend，
   并从 HTML 中去掉根作用域 SW 注册。`/sw.js` 与 `/registerSW.js` 不被公开主题覆盖；升级后的
@@ -62,67 +295,24 @@
 
 ### Changed
 
-- **CI 资产准备的 Node 工具链从 23 固定为 22 LTS**：`.github/actions/prepare-assets/action.yml` 的
-  `actions/setup-node` 与 `bundled-themes.lock.json` 的 `embedded_default_frontend.build.node_version`
-  同步从 `23` 改为 `22`。原因：Node 23 在 Setup Node.js 下载阶段出现二十余分钟停滞，拖慢甚至阻塞
-   prepare-assets 及后续全部 job；内嵌前端 `komari-web-stable@v1.5.0-stable.6` 的官方 CI 与浏览器
-  冒烟均使用 Node 22 完成并通过，兼容性有现成依据。Go 工具链、Web 源码锁定版本、随包主题与全部
-  业务代码不变；Compatibility：无数据库 / Agent v2 / API / 配置 / Docker 影响，构建产物仍按锁定的
-  Web commit 执行 `npm ci` 与 `npm run build`。
-- **内嵌默认前端更新到 `v1.5.0-stable.6`**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
-  从 `komari-web-stable@v1.5.0-stable.4`（`ad7ad0557805d445e638efa4acecd964eb0df1b8`）更新为
-  `v1.5.0-stable.6`（`4c613a2c33311f0833d99bb935bf6456c36fc816`，不可变 tag；含 `v1.5.0-stable.5`
-  的全部内容）。安全修复：zod 升至 4.6.7（GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404，数组校验内存耗尽），
-  `/admin/pprof` 的 `profiles` 数组增加 `.max(16)` 长度上限；fast-uri 3.1.9、serialize-javascript 7.1.4。
-  构建修复：`@types/node` 显式声明为 devDependency，重新生成 lockfile 不再丢失 Node 类型。依赖更新：
-  react/react-dom 19.3.1、@radix-ui/themes 3.3.0、tailwindcss 4.3.3 等 22 项 minor/patch。新增
-  Playwright 浏览器冒烟套件（7 用例，生产构建 + mock 后端）并作为第四个必需门禁。Server 构建仍按锁定
-  commit 执行 `npm ci` 与 `npm run build`；`/admin`、`/manage`、`/install`、`/database-recovery` 继续避开
-  Workbox navigation fallback，`/terminal` 继续返回 `410 Gone`。随包首选主题
-  `komari-next-stable@v1.4.19-stable.5` **保持不变**。既有实例不会被自动覆盖。
-- **Server 更新改为仅提醒、必须人工触发（Issue #22）**：GitHub 正式 Release 仍供管理后台检测并显示
-  新版本与 Release Notes，但发布工作流不再创建或移动 Docker `stable` / `latest` 浮动标签，只推送
-  与 Release 同名的不可变 `v1.5.0-stable.N` 标签。历史 `:stable` 保持冻结，不删除、不重写。
-- **内嵌默认前端重新 pin**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
-  先从 `komari-web-stable@v1.5.0-stable.1` 更新到修复 PWA fallback 的
-  `v1.5.0-stable.2`，再更新到彻底删除远程命令、终端、Agent 文件管理 UI 与专用依赖的
-  `v1.5.0-stable.3`，本次继续更新到修复同基础版本 stable 修订比较的
-  `v1.5.0-stable.4`（`ad7ad0557805d445e638efa4acecd964eb0df1b8`，不可变 tag）。后台现在会把
-  `1.5.0-stable.3 -> stable.5/stable.6` 识别为新版本并显示红色更新图标；检查只提醒，不自动升级。
-  `/admin`、`/manage`、`/install`、`/database-recovery` 继续避开 Workbox navigation fallback，
-  `/terminal` 请求继续到达 Server 的 `410 Gone` tombstone。Server 构建按锁定 commit 执行
-  `npm ci` 与 `npm run build`。
-- **随包首选主题重新 pin**：`bundled_preferred_theme` 从
-  `komari-next-stable@v1.4.19-stable.1` 更新为 `v1.4.19-stable.5`
-  （`9b579fe4e4801d1388e3c7db5189710de50b3c86`，不可变 tag）。锁定的 `dist-release.zip`
-  SHA256 为 `3abf9f4246be148686517874edbc874dc6482114391c5db5d8f77914164bde68`，包内 manifest
-  版本为 `1.4.19-stable.5`，因此全新安装的主题管理页能显示准确 stable 修订号。既有实例不会被
-  自动覆盖，需管理员点击“更新主题”。
+- **内嵌默认前端重新 pin 到 `v1.5.0-stable.2`**：`bundled-themes.lock.json` 的
+  `embedded_default_frontend` 从 `komari-web-stable@v1.5.0-stable.1`
+  （`b69e706a147887c96290068e9f1bad9ebe37fe55`）更新为修复 PWA fallback 的 `v1.5.0-stable.2`
+  （`6a697a1656af4a92b8ae5dd2a0262a1b8cf4ca6d`，不可变 tag）：Workbox denylist 覆盖
+  `/admin`、`/terminal`、`/manage`、`/install`、`/database-recovery`。随包首选主题
+  `komari-next-stable@v1.4.19-stable.1` **保持不变**。
 
 ### Compatibility
 
-- 不修改数据库、Agent/API、配置格式或 Docker 部署方式。后台版本提示仅修正 stable 修订比较；
-  使用不可变 Docker tag 的部署不受影响；仍引用历史 `:stable` 的容器将停留在最后一次已发布摘要，
-  不会再被新 Release 自动推动升级。
-- 不修改数据库 Schema、Agent v2 已有字段、配置格式或 Docker 部署方式。任务与结果表保留，便于回滚；
-  启动时仅把 `exit_code IS NULL` 的遗留任务结果标记为取消，已完成历史不变。
-- 旧 Agent 仍可连接、上报监控、执行 ping 和接收普通消息。旧 `agent.taskResult` / `agent.file.result`
-  报文会得到成功确认后被忽略；服务端不会向任何版本 Agent 下发远控事件。
-- 旧远控 HTTP API 有意改为 `410 Gone`，旧远控 RPC 有意改为 `Method not found`。这是安全移除，
-  不提供兼容开关。
+- 不修改数据库 Schema、Agent v2 已有字段、HTTP API、配置格式或 Docker 部署方式。
+- `/` 与 `/instance/*` 仍由当前公开主题提供；`/admin`、`/manage` 等核心路径强制使用嵌入式
+  default frontend；`/sw.js` 与 `/registerSW.js` 不被公开主题覆盖。
 - 外置 MySQL/PostgreSQL 指标库仍需用户按数据库自身方式备份；Server 脚本只负责本机 `/opt/komari`。
 
-### Upgrade
+### Upgrade / Rollback
 
-- 以后升级 Server 必须由管理员显式执行：裸机重新运行升级脚本；Docker 先把镜像 tag 改为目标
-  `v1.5.0-stable.N`，再手动 pull/recreate。后台红色更新图标只提示，不执行升级。
-- 按常规方式替换二进制或更新镜像。首次启动会在版本升级备份完成后取消遗留未完成远控任务；
-  无需 Schema 迁移。升级前应确认自动备份所需磁盘空间。
-
-### Rollback
-
-- 如需恢复旧版行为，先停止新版本，并恢复 `data/backup/upgrade-*.zip` 后再换回旧二进制/镜像。
-  直接回退二进制也能读取保留的表结构，但新版本已标记为取消的未完成任务不会自动恢复为待执行状态。
+- 替换二进制或更新镜像即可，无需数据库操作；已安装旧 SW 的浏览器在更新 `/sw.js` 后恢复后台访问。
+- 回退到 `1.5.0-stable.2` 的二进制/镜像；数据库无 schema 变化。
 
 ## 1.5.0-stable.2 — 已发布（2026-09-17）
 

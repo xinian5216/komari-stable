@@ -3,7 +3,7 @@
 # 面板更新必须由管理员显式修改这个不可变版本 tag；正式 Release 不会自动改动容器。
 services:
   komari:
-    image: ghcr.io/xinian5216/komari-stable:v1.5.0-stable.4
+    image: ghcr.io/xinian5216/komari-stable:v1.5.0-stable.11
     container_name: komari
     ports:
       - "25774:25774"
