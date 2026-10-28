@@ -62,6 +62,17 @@
 
 ### Changed
 
+- **内嵌默认前端更新到 `v1.5.0-stable.6`**：`bundled-themes.lock.json` 的 `embedded_default_frontend`
+  从 `komari-web-stable@v1.5.0-stable.4`（`ad7ad0557805d445e638efa4acecd964eb0df1b8`）更新为
+  `v1.5.0-stable.6`（`4c613a2c33311f0833d99bb935bf6456c36fc816`，不可变 tag；含 `v1.5.0-stable.5`
+  的全部内容）。安全修复：zod 升至 4.6.7（GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404，数组校验内存耗尽），
+  `/admin/pprof` 的 `profiles` 数组增加 `.max(16)` 长度上限；fast-uri 3.1.9、serialize-javascript 7.1.4。
+  构建修复：`@types/node` 显式声明为 devDependency，重新生成 lockfile 不再丢失 Node 类型。依赖更新：
+  react/react-dom 19.3.1、@radix-ui/themes 3.3.0、tailwindcss 4.3.3 等 22 项 minor/patch。新增
+  Playwright 浏览器冒烟套件（7 用例，生产构建 + mock 后端）并作为第四个必需门禁。Server 构建仍按锁定
+  commit 执行 `npm ci` 与 `npm run build`；`/admin`、`/manage`、`/install`、`/database-recovery` 继续避开
+  Workbox navigation fallback，`/terminal` 继续返回 `410 Gone`。随包首选主题
+  `komari-next-stable@v1.4.19-stable.5` **保持不变**。既有实例不会被自动覆盖。
 - **Server 更新改为仅提醒、必须人工触发（Issue #22）**：GitHub 正式 Release 仍供管理后台检测并显示
   新版本与 Release Notes，但发布工作流不再创建或移动 Docker `stable` / `latest` 浮动标签，只推送
   与 Release 同名的不可变 `v1.5.0-stable.N` 标签。历史 `:stable` 保持冻结，不删除、不重写。
