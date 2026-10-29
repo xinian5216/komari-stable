@@ -14,7 +14,51 @@
 
 ## Unreleased
 
-（暂无未发布变更。下一版本的条目在合入 `stable` 后于此累积，发布时归档到对应版本段。）
+### Fixed
+
+- **修复后台服务器列表详情抽屉崩溃（React Slot 异常）**：内嵌默认前端更新到 `komari-web-stable@v1.5.0-stable.7`
+  （`8db73b9be94feb655a112c529a2179ba2e6943eb`，不可变 tag）。此前内嵌版本 `v1.5.0-stable.6`
+  （`4c613a2c33311f0833d99bb935bf6456c36fc816`）中，`src/components/ui/drawer.tsx` 的 `DrawerContent`
+  在 `DrawerPortal` 直接子节点带有显式 JSX 空格 `{" "}`（源自上游提交 `05365b4`）；fork 将
+  `@radix-ui/react-dialog` 维护到 `^1.3.1` 后，Radix `DialogPortal` 把每个子节点包一层
+  `PortalPrimitive asChild`，纯文本空格进入 Radix Slot 即抛
+  `Primitive.div failed to slot onto its children. Expected a single React element child or \`Slottable\`.`，
+  导致登录后台点击任意服务器名称后整个 `/admin` 页面落入 ErrorBoundary、详情抽屉完全无法打开。
+  新版本仅删除该处及 `</DrawerPrimitive.Content>` 尾部共两处空格节点（最小 diff，2 行），不改组件结构、
+  不降级 React / Radix / Vaul、不改任何接口与视觉行为；抽屉方向（桌面右侧 / 移动端底部）、焦点管理、
+  Escape 关闭、遮罩、主题与响应式行为均保持。回归：Web 仓库 Playwright 冒烟套件扩充至 12 用例
+  （新增 5 个后台抽屉用例：两个节点详情、桌面/移动端方向、深色主题、遮罩与滚动锁定、完成按钮与
+  Escape 关闭、零未捕获异常），修复前 5/5 失败、修复后通过；`v1.5.0-stable.7` 发布提交上
+  `required-gate`、`security-gate`、`secret-gate`、`browser smoke (production build)` 四项必需门禁全部成功。
+  Server 构建仍按锁定 commit 执行 `npm ci` 与 `npm run build`；`/admin`、`/manage`、`/install`、
+  `/database-recovery` 继续避开 Workbox navigation fallback，`/terminal` 继续返回 `410 Gone`。
+  随包首选主题 `komari-next-stable@v1.4.19-stable.5` **保持不变**。既有实例不会被自动覆盖。
+
+### Security
+
+- 无本次直接的安全修复；继承 `v1.5.0-stable.7` 前端的安全维护状态（相对 `v1.5.0-stable.6` 无新增
+  依赖变更，Web 侧生产依赖审计 0 漏洞）。
+
+### Compatibility
+
+- 无 Server API、数据库 Schema、Agent v2 协议、配置格式或 Docker 部署方式变更。
+- 内嵌默认前端由 `v1.5.0-stable.6`（`4c613a2c…`）升级为 `v1.5.0-stable.7`（`8db73b9…`），仅含上述
+  抽屉崩溃修复与回归测试；随包首选主题 `komari-next-stable@v1.4.19-stable.5` 的 commit 与 sha256 不变。
+- `/admin`、`/manage`、`/install`、`/database-recovery` 继续避开 Workbox navigation fallback；
+  `/terminal` 继续返回 `410 Gone`。
+- 既有实例不会被自动覆盖；运行中的面板需要管理员显式升级。已移除的远程命令 / 终端 / Agent 文件管理
+  能力继续保持不可访问（路由 `410 Gone`、RPC 注销与事件拒绝不受影响）。
+- 仅发布不可变 Docker 版本标签，不创建、不移动 `stable` / `latest` 浮动标签。
+
+### Upgrade
+
+- 升级前备份 data 目录；裸机通过现有安装器选择更新，或校验 `SHA256SUMS` 后替换对应平台二进制；
+  Docker 改为新的不可变版本标签重建容器，保留 data 卷与配置。升级后首次加载新前端即可获得抽屉修复。
+
+### Rollback
+
+- 停服后换回上一版本二进制或不可变 Docker 标签，保留原有数据与配置；本次没有新增数据库迁移，
+  回滚不涉及数据恢复。
 
 ## 1.5.0-stable.11 — 已发布（2026-10-28）
 
